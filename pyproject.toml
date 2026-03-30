@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "virtual-subject"
+version = "0.1.0"
+description = "Research-grade TRIBE v2 virtual subject MVP"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "OpenAI Codex" }]
+dependencies = [
+  "alembic==1.16.5",
+  "fastapi==0.116.1",
+  "jinja2==3.1.6",
+  "minio==7.2.18",
+  "numpy==2.3.3",
+  "pandas==2.3.2",
+  "pillow==11.3.0",
+  "psycopg[binary]==3.2.10",
+  "pydantic==2.11.9",
+  "pydantic-settings==2.11.0",
+  "python-multipart==0.0.20",
+  "sqlalchemy==2.0.43",
+  "uvicorn[standard]==0.35.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx==0.28.1",
+  "pytest==8.4.2",
+  "pytest-cov==7.0.0",
+  "ruff==0.13.0",
+]
+real = [
+  "tribev2==0.1.0",
+]
+
+[project.scripts]
+virtual-subject-api = "virtual_subject.api.main:run"
+virtual-subject-worker = "virtual_subject.worker.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["apps/api/tests", "apps/worker/tests"]
+pythonpath = ["src"]
+cache_dir = ".tmp/pytest_cache"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

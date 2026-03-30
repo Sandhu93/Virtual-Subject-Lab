@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="panel">
+    <p class="eyebrow">Status</p>
+    <h2>Scaffold online</h2>
+    <p>
+      The repo baseline is running with FastAPI, a worker process, Postgres and MinIO wiring,
+      and a framework-free UI shell. TRIBE mode is currently <strong>{{ tribe_mode }}</strong>.
+    </p>
+  </div>
+  <div class="panel">
+    <p class="eyebrow">Caveats</p>
+    <ul>
+      <li>Average subject predictions only.</li>
+      <li>Predicted BOLD-like responses, not neuronal firing.</li>
+      <li>Research use only.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <p class="eyebrow">Pinned UI target</p>
+    <p>Oat version {{ oat_version }} will be wired in as locally vendored assets.</p>
+  </div>
+</section>
+{% endblock %}
+

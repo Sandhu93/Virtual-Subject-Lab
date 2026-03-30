@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, alias="APP_PORT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     worker_poll_seconds: int = Field(default=2, alias="WORKER_POLL_SECONDS")
+    frontend_origins: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000",
+        alias="FRONTEND_ORIGINS",
+    )
 
     database_url: str = Field(
         default="postgresql+psycopg://virtual_subject:virtual_subject@localhost:5432/virtual_subject",

@@ -4,8 +4,9 @@
 
 The app is intentionally small:
 
-- FastAPI for both REST and server-rendered HTML
-- vanilla JavaScript for progressive enhancement
+- FastAPI for the REST API
+- a separate static frontend served by Nginx
+- vanilla JavaScript for the browser client
 - one polling Python worker
 - Postgres for metadata and queue state
 - MinIO for artifacts
@@ -23,7 +24,7 @@ The UI keeps the paper’s caveats visible: average unseen subject only, predict
 - timeline, frame, ROI trace, and top-ROI APIs
 - compare endpoint for two runs
 - export bundle generation and download endpoint
-- server-rendered pages for stimuli, run workspace, compare, exports, and about
+- separate frontend pages for stimuli, run workspace, compare, exports, and about
 - Docker Compose definition for API, worker, Postgres, MinIO, and bucket init
 - Alembic baseline migration
 - test suite covering API flow, atlas/storage, mock pipeline, and smoke path
@@ -52,7 +53,7 @@ Scientific constraints pulled into the app:
 
 ## Minimal dependency philosophy
 
-- No React, Next.js, or frontend state framework.
+- No React, Next.js, or frontend build framework.
 - No Redis. Queueing uses a Postgres `jobs` table and one worker process.
 - No cloud SDK dependency. Storage is S3-compatible through MinIO only.
 - No heavyweight plotting or charting library. The viewer uses hand-rolled SVG and lightweight PNG previews.
@@ -62,17 +63,19 @@ Scientific constraints pulled into the app:
 
 ```text
 browser
-  -> FastAPI app
-     -> Postgres
-        - users, projects, stimuli, runs, run_ablations
-        - roi_summaries, exports, artifacts, audit_logs, jobs
-     -> MinIO
-        - uploaded media
-        - events JSON
-        - prediction .npy
-        - ROI traces JSON
-        - preview .png
-        - export .zip
+  -> frontend container
+     - static HTML, Oat assets, vanilla JS
+     -> FastAPI API
+        -> Postgres
+           - users, projects, stimuli, runs, run_ablations
+           - roi_summaries, exports, artifacts, audit_logs, jobs
+        -> MinIO
+           - uploaded media
+           - events JSON
+           - prediction .npy
+           - ROI traces JSON
+           - preview .png
+           - export .zip
 
 worker
   -> polls jobs table
@@ -86,6 +89,7 @@ Repo tree:
 virtual-subject/
   apps/
     api/tests/
+    frontend/public/
     worker/tests/
   alembic/
     env.py
@@ -102,7 +106,6 @@ virtual-subject/
     db/
     domain/
     services/
-    web/
     worker/
   .env.example
   Makefile
@@ -113,9 +116,8 @@ virtual-subject/
 
 ## Dependencies and justification
 
-- `fastapi`: REST API plus server-rendered HTML.
+- `fastapi`: REST API surface.
 - `uvicorn[standard]`: ASGI runtime.
-- `jinja2`: HTML templates without a frontend framework.
 - `sqlalchemy`: ORM and lightweight queue persistence.
 - `alembic`: repeatable schema migrations.
 - `psycopg[binary]`: Postgres driver for Docker runtime.
@@ -129,11 +131,12 @@ virtual-subject/
 
 ## UI layer
 
-The UI is framework-free and references Oat pinned to `0.5.0` from the published package path:
+The UI is framework-free and lives in `apps/frontend/public`.
 
-- `https://cdn.jsdelivr.net/npm/@knadh/oat@0.5.0/dist/oat.min.css`
-
-The current code still keeps local custom CSS for layout and research-specific affordances. Vendoring the exact Oat assets is the next cleanup step.
+- Oat `0.5.0` is vendored locally under `apps/frontend/public/assets/vendor/oat/`
+- custom CSS and JavaScript stay in the same static tree
+- the frontend is served by its own Nginx container on port `3000`
+- the API is consumed over HTTP with CORS limited by `FRONTEND_ORIGINS`
 
 ## TRIBE integration
 
@@ -182,6 +185,7 @@ When MinIO is the storage backend, the worker stages media into a temp file befo
 
 Services:
 
+- `frontend`
 - `api`
 - `worker`
 - `postgres`
@@ -195,7 +199,11 @@ docker compose -f infra/compose.yaml config
 docker compose -f infra/compose.yaml up --build
 ```
 
-Note: in this environment the compose file validates, but end-to-end `docker compose up` could not be executed because the local Docker daemon was unavailable.
+Default local URLs:
+
+- frontend: `http://localhost:3000`
+- API: `http://localhost:8000`
+- MinIO console: `http://localhost:9001`
 
 ## MinIO bucket layout
 
@@ -234,6 +242,7 @@ App:
 - `APP_ENV`
 - `APP_HOST`
 - `APP_PORT`
+- `FRONTEND_ORIGINS`
 - `WORKER_POLL_SECONDS`
 - `OAT_VERSION`
 - `APP_GIT_COMMIT`
@@ -263,14 +272,13 @@ Implemented routes include:
 
 Current test status:
 
-- `8 passed` on the local mock-mode suite
+- `9 passed` on the local mock-mode suite
 
 ## Known limitations
 
 - The current viewer surfaces ROI-level cortical summaries, not a full fsaverage5 mesh renderer.
 - The bundled atlas is a curated lab ROI pack with deterministic vertex partitions, not yet a real Glasser/fsaverage5 asset drop.
 - The app creates tables at startup for convenience and also ships Alembic; a dedicated `db-migrate` compose service is still optional future cleanup.
-- Oat is pinned but not yet vendored locally.
 
 ## Scientific and license caveats
 

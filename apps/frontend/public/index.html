@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>virtual-subject</title>
+    <link rel="stylesheet" href="/assets/vendor/oat/oat.min.css">
+    <link rel="stylesheet" href="/assets/css/app.css">
+  </head>
+  <body data-page="frontend">
+    <header class="shell-header">
+      <div>
+        <p class="eyebrow">TRIBE v2 research MVP</p>
+        <h1>virtual-subject</h1>
+      </div>
+      <nav id="main-nav">
+        <a href="#/">Home</a>
+        <a href="#/stimuli">Stimuli</a>
+        <a href="#/compare">Compare</a>
+        <a href="#/exports">Exports</a>
+        <a href="#/about">About</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero route-panel" data-route="home">
+        <div class="panel">
+          <p class="eyebrow">Status</p>
+          <h2>Separate frontend online</h2>
+          <p>
+            This UI is now served from its own frontend container and talks to the FastAPI backend over HTTP.
+          </p>
+        </div>
+        <div class="panel">
+          <p class="eyebrow">Caveats</p>
+          <ul>
+            <li>Average subject predictions only.</li>
+            <li>Predicted BOLD-like responses, not neuronal firing.</li>
+            <li>Research use only.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <p class="eyebrow">Stack</p>
+          <p>Frontend: standalone static app. Backend: FastAPI API + worker + Postgres + MinIO.</p>
+        </div>
+        <div class="panel">
+          <p class="eyebrow">Workflow</p>
+          <ol class="compact-list">
+            <li>Create a text, audio, or video stimulus.</li>
+            <li>Queue a run in average-subject cortical mode.</li>
+            <li>Inspect ablations, ROI traces, compare runs, and export a bundle.</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="route-panel" data-route="stimuli" hidden>
+        <section class="grid-shell">
+          <article class="panel">
+            <p class="eyebrow">Text stimulus</p>
+            <h2>Paste text</h2>
+            <form id="text-stimulus-form" class="stack">
+              <label>
+                <span>Name</span>
+                <input type="text" name="name" value="Text stimulus" required>
+              </label>
+              <label>
+                <span>Stimulus text</span>
+                <textarea name="text" rows="8" required>The sailors are annoyed by the noise of the seagulls.</textarea>
+              </label>
+              <button type="submit">Create text stimulus</button>
+            </form>
+          </article>
+
+          <article class="panel">
+            <p class="eyebrow">File stimulus</p>
+            <h2>Upload audio or video</h2>
+            <form id="file-stimulus-form" class="stack">
+              <label>
+                <span>Name</span>
+                <input type="text" name="name" value="Uploaded stimulus" required>
+              </label>
+              <label>
+                <span>Source type</span>
+                <select name="source_type">
+                  <option value="audio">Audio</option>
+                  <option value="video">Video</option>
+                </select>
+              </label>
+              <label>
+                <span>File</span>
+                <input type="file" name="file" accept="audio/*,video/*" required>
+              </label>
+              <button type="submit">Upload and finalize</button>
+            </form>
+          </article>
+
+          <article class="panel">
+            <p class="eyebrow">Run setup</p>
+            <h2>Queue a run</h2>
+            <form id="run-create-form" class="stack">
+              <label>
+                <span>Stimulus</span>
+                <select name="stimulus_id" id="stimulus-select" required></select>
+              </label>
+              <label>
+                <span>Ablations</span>
+                <input type="text" name="ablations" value="full,text_only,audio_only,video_only,text_audio,text_video,audio_video">
+              </label>
+              <button type="submit">Create run</button>
+            </form>
+            <p class="meta-copy">Stimuli are hashed on finalize. Matching run configs reuse the cached successful run.</p>
+            <pre id="stimulus-feedback" class="feedback"></pre>
+          </article>
+        </section>
+
+        <section class="panel grid-shell-single">
+          <p class="eyebrow">Current stimuli</p>
+          <h2>Recent stimuli</h2>
+          <table class="simple-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Modalities</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody id="stimuli-table-body"></tbody>
+          </table>
+        </section>
+      </section>
+
+      <section class="route-panel" data-route="runs" hidden>
+        <section class="grid-shell workspace-shell" id="run-shell">
+          <aside class="panel">
+            <p class="eyebrow">Run</p>
+            <h2 id="run-title">Select or open a run</h2>
+            <p class="meta-copy">Status: <strong id="run-status">unknown</strong></p>
+            <p class="meta-copy">Average unseen subject · cortical only · research use only</p>
+            <label>
+              <span>Run</span>
+              <select id="run-select"></select>
+            </label>
+            <label>
+              <span>Ablation</span>
+              <select id="ablation-select"></select>
+            </label>
+            <label>
+              <span>ROI quick-pick</span>
+              <select id="roi-select"></select>
+            </label>
+            <label>
+              <span>Threshold</span>
+              <input id="threshold-slider" type="range" min="0" max="1" step="0.05" value="0.25">
+            </label>
+            <label>
+              <span>Time scrubber</span>
+              <input id="time-slider" type="range" min="0" max="0" step="1" value="0">
+            </label>
+            <div class="toggle-row">
+              <label><input id="hemisphere-toggle" type="checkbox"> Right emphasis</label>
+              <label><input id="parcel-toggle" type="checkbox" checked> Parcel labels</label>
+            </div>
+            <button id="snapshot-button" type="button">Refresh frame</button>
+            <button id="export-button" type="button">Create export bundle</button>
+            <pre id="workspace-feedback" class="feedback"></pre>
+          </aside>
+
+          <section class="panel viewer-panel">
+            <p class="eyebrow">Cortical viewer</p>
+            <h2>ROI surface summary over time</h2>
+            <svg id="brain-viewer" viewBox="0 0 720 420" role="img" aria-label="Cortical ROI map">
+              <ellipse cx="180" cy="220" rx="140" ry="150"></ellipse>
+              <ellipse cx="540" cy="220" rx="140" ry="150"></ellipse>
+              <g id="brain-nodes"></g>
+            </svg>
+            <div id="timeline-chart" class="chart-box"></div>
+          </section>
+
+          <aside class="panel">
+            <p class="eyebrow">ROI summaries</p>
+            <h2>Top responding ROIs</h2>
+            <ol id="top-roi-list" class="compact-list"></ol>
+            <div class="trace-shell">
+              <p class="eyebrow">ROI trace</p>
+              <div id="roi-trace-chart" class="chart-box"></div>
+            </div>
+            <div class="notes-shell">
+              <p class="eyebrow">Caveats</p>
+              <p class="meta-copy">
+                These are predicted hemodynamically delayed BOLD-like responses for an average subject, not real-time neural firing.
+              </p>
+            </div>
+          </aside>
+        </section>
+      </section>
+
+      <section class="route-panel" data-route="compare" hidden>
+        <section class="grid-shell">
+          <article class="panel">
+            <p class="eyebrow">Batch compare</p>
+            <h2>Contrast two runs</h2>
+            <form id="compare-form" class="stack">
+              <label>
+                <span>Run A</span>
+                <select name="run_a_id" id="compare-run-a" required></select>
+              </label>
+              <label>
+                <span>Run B</span>
+                <select name="run_b_id" id="compare-run-b" required></select>
+              </label>
+              <label>
+                <span>Ablation</span>
+                <select name="ablation">
+                  <option value="full">full</option>
+                  <option value="text_only">text_only</option>
+                  <option value="audio_only">audio_only</option>
+                  <option value="video_only">video_only</option>
+                  <option value="text_audio">text_audio</option>
+                  <option value="text_video">text_video</option>
+                  <option value="audio_video">audio_video</option>
+                </select>
+              </label>
+              <button type="submit">Compare runs</button>
+            </form>
+          </article>
+
+          <article class="panel">
+            <p class="eyebrow">Output</p>
+            <h2>Contrast summary</h2>
+            <pre id="compare-feedback" class="feedback"></pre>
+            <table class="simple-table" id="compare-table">
+              <thead>
+                <tr>
+                  <th>ROI</th>
+                  <th>Run A peak</th>
+                  <th>Run B peak</th>
+                  <th>Delta</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </article>
+        </section>
+      </section>
+
+      <section class="route-panel" data-route="exports" hidden>
+        <section class="grid-shell">
+          <article class="panel">
+            <p class="eyebrow">Exports</p>
+            <h2>Create bundle</h2>
+            <form id="export-form" class="stack">
+              <label>
+                <span>Run</span>
+                <select name="run_id" id="export-run-select" required></select>
+              </label>
+              <button type="submit">Queue export</button>
+            </form>
+            <pre id="export-feedback" class="feedback"></pre>
+          </article>
+
+          <article class="panel">
+            <p class="eyebrow">History</p>
+            <h2>Bundles</h2>
+            <table class="simple-table">
+              <thead>
+                <tr>
+                  <th>Export</th>
+                  <th>Run</th>
+                  <th>Status</th>
+                  <th>Bundle</th>
+                </tr>
+              </thead>
+              <tbody id="exports-table-body"></tbody>
+            </table>
+          </article>
+        </section>
+      </section>
+
+      <section class="route-panel" data-route="about" hidden>
+        <section class="grid-shell">
+          <article class="panel">
+            <p class="eyebrow">Scientific caveats</p>
+            <h2>What this app does</h2>
+            <ul class="compact-list">
+              <li>Predicts cortical fMRI/BOLD-like activity for an average unseen subject.</li>
+              <li>Uses TRIBE-style multimodal pretrained inference only.</li>
+              <li>Supports ablations because modality dropout is part of the model training setup.</li>
+              <li>Exports reproducible artifacts for teaching and hypothesis testing.</li>
+            </ul>
+          </article>
+
+          <article class="panel">
+            <p class="eyebrow">What it does not do</p>
+            <h2>Scope limits</h2>
+            <ul class="compact-list">
+              <li>No personalized diagnosis or clinical interpretation.</li>
+              <li>No neuron-level activity or real-time cognition claims.</li>
+              <li>No fine-tuning UI or training pipeline in V1.</li>
+              <li>No cloud-specific runtime beyond Docker Compose and MinIO.</li>
+            </ul>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="/assets/vendor/oat/oat.min.js" defer></script>
+    <script src="/assets/js/app.js" defer></script>
+  </body>
+</html>

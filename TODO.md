@@ -7,7 +7,7 @@
 - [x] Implement config, DB models, migrations, and storage adapters.
 - [x] Implement deterministic mock adapter and worker job loop.
 - [x] Implement stimuli, runs, analysis, exports, and atlas endpoints.
-- [x] Implement server-rendered Oat UI pages and progressive enhancement.
+- [x] Implement a separate Oat-based frontend and connect it to the API over HTTP.
 - [x] Implement export manifests, caching, and provenance capture.
 - [x] Add unit, API, worker, and smoke tests.
 - [x] Verify the stack in Docker Compose.

@@ -15,9 +15,10 @@ def test_health_endpoint() -> None:
     assert payload["service"] == "api"
 
 
-def test_home_page() -> None:
+def test_api_root() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "virtual-subject" in response.text
-
+    payload = response.json()
+    assert payload["service"] == "virtual-subject-api"
+    assert payload["api_base"] == "/api/v1"

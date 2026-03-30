@@ -39,9 +39,18 @@ virtual-subject-worker = "virtual_subject.worker.main:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+virtual_subject = [
+  "web/templates/*.html",
+  "web/static/css/*.css",
+  "web/static/js/*.js",
+  "web/static/vendor/oat/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["apps/api/tests", "apps/worker/tests"]

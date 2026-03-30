@@ -94,3 +94,36 @@ def get_frame(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+
+@router.get("/{run_id}/frames/{time_index}/vertices")
+def get_frame_vertices(
+    run_id: str,
+    time_index: int,
+    ablation: str = "full",
+    service: AppService = Depends(get_service),
+):
+    """Return per-vertex float32 values at a single timepoint as binary octet-stream.
+
+    The response body is a raw little-endian float32 array of length n_vertices
+    (20 484 for fsaverage5 cortex). Clients should read it with:
+        new Float32Array(await response.arrayBuffer())
+    """
+    import struct
+    from fastapi.responses import Response
+
+    try:
+        vertices = service.get_frame_vertices(run_id, ablation, time_index)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    data = struct.pack(f"<{len(vertices)}f", *vertices.tolist())
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={
+            "X-Vertex-Count": str(len(vertices)),
+            "X-Time-Index": str(time_index),
+            "X-Ablation": ablation,
+        },
+    )
+

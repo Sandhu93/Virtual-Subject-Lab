@@ -121,6 +121,20 @@ class RoiSummary(Base):
     rank_global: Mapped[int | None] = mapped_column(Integer, default=None)
 
 
+class Contrast(Base):
+    """Stores metadata for a vertex-level contrast between two runs."""
+
+    __tablename__ = "contrasts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    run_a_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
+    run_b_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
+    ablation: Mapped[str] = mapped_column(String(32))
+    mode: Mapped[str] = mapped_column(String(32), default="mean_difference")
+    contrast_key: Mapped[str | None] = mapped_column(String(512), default=None)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class Export(Base):
     __tablename__ = "exports"
 

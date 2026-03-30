@@ -124,6 +124,8 @@
                 <th>Status</th>
                 <th>Modalities</th>
                 <th>Duration</th>
+                <th>Transcript</th>
+                <th>Word timings</th>
               </tr>
             </thead>
             <tbody id="stimuli-table-body"></tbody>
@@ -169,12 +171,19 @@
 
           <section class="panel viewer-panel">
             <p class="eyebrow">Cortical viewer</p>
-            <h2>ROI surface summary over time</h2>
-            <svg id="brain-viewer" viewBox="0 0 720 420" role="img" aria-label="Cortical ROI map">
-              <ellipse cx="180" cy="220" rx="140" ry="150"></ellipse>
-              <ellipse cx="540" cy="220" rx="140" ry="150"></ellipse>
-              <g id="brain-nodes"></g>
-            </svg>
+            <h2>Predicted cortical activity</h2>
+            <p class="meta-copy viewer-note">
+              Drag to rotate · Scroll to zoom · Sphere approximation until
+              <code>python scripts/load_atlases.py</code> is run for real fsaverage5 positions.
+            </p>
+            <canvas id="brain-canvas" width="720" height="400"
+              style="width:100%;border-radius:8px;cursor:grab;display:block;"
+              aria-label="WebGL cortical surface viewer"></canvas>
+            <div class="viewer-controls">
+              <button id="play-button" type="button">▶ Play</button>
+              <button id="pause-button" type="button" disabled>⏸ Pause</button>
+              <button id="snapshot-button" type="button">📷 Snapshot</button>
+            </div>
             <div id="timeline-chart" class="chart-box"></div>
           </section>
 
@@ -306,6 +315,7 @@
     </main>
 
     <script src="/assets/vendor/oat/oat.min.js" defer></script>
+    <script src="/assets/js/viewer.js" defer></script>
     <script src="/assets/js/app.js" defer></script>
   </body>
 </html>

@@ -19,6 +19,7 @@ from virtual_subject.db.bootstrap import ensure_defaults
 from virtual_subject.db.models import (
     Artifact,
     AuditLog,
+    Contrast,
     Export,
     Job,
     RoiSummary,
@@ -369,6 +370,13 @@ class AppService:
         self.storage.put_json(events_key, events.fillna("").to_dict(orient="records"))
         metadata = self._upsert_stimulus_metadata(stimulus.id)
         metadata.events_key = events_key
+        # Back-fill transcript text from events dataframe so the stimulus API
+        # can report word_timing_status="available" after the first run.
+        if metadata.transcript_text is None and "token" in events.columns:
+            text_rows = events[events["type"].str.lower() == "text"] if "type" in events.columns else events
+            tokens = text_rows["token"].dropna().tolist()
+            if tokens:
+                metadata.transcript_text = " ".join(str(t) for t in tokens)
         self.db.add(metadata)
         self.db.commit()
 
@@ -501,7 +509,22 @@ class AppService:
             "global_mean": float(tensor[time_index].mean()),
             "global_max": float(tensor[time_index].max()),
             "roi_frame": frame,
+            # URL to fetch the raw per-vertex float32 values for this frame.
+            # Clients that render a full cortical surface (e.g. WebGL viewer)
+            # should prefer this over roi_frame.
+            "vertices_url": f"/api/v1/runs/{run_id}/frames/{time_index}/vertices?ablation={ablation}",
         }
+
+    def get_frame_vertices(self, run_id: str, ablation: str, time_index: int) -> np.ndarray:
+        """Return the raw (n_vertices,) float32 array for a single timepoint."""
+        record = self.db.scalar(
+            select(RunAblation).where(RunAblation.run_id == run_id, RunAblation.ablation == ablation)
+        )
+        if record is None or not record.tensor_key:
+            raise KeyError("No prediction tensor for the requested ablation")
+        tensor = self.storage.get_numpy(record.tensor_key)
+        time_index = max(0, min(time_index, tensor.shape[0] - 1))
+        return tensor[time_index].astype(np.float32)
 
     def get_roi_traces(self, run_id: str, ablation: str, roi_ids: list[str]) -> dict:
         record = self.db.scalar(
@@ -561,9 +584,50 @@ class AppService:
             ],
         }
 
-    def compare_runs(self, run_a_id: str, run_b_id: str, ablation: str) -> dict:
-        timeline_a = self.get_timeline(run_a_id, ablation)
-        timeline_b = self.get_timeline(run_b_id, ablation)
+    def create_contrast(self, run_a_id: str, run_b_id: str, ablation: str, mode: str = "mean_difference") -> dict:
+        """Compute a vertex-level contrast (run_a − run_b) and persist it.
+
+        The contrast array has shape (n_vertices,) and is stored as a .npy file.
+        Returns contrast_id and a signed download URL (storage key for MVP).
+        """
+        if mode != "mean_difference":
+            raise ValueError(f"Unsupported contrast mode {mode!r}; only 'mean_difference' is supported in V1.")
+
+        abl_a = self.db.scalar(
+            select(RunAblation).where(RunAblation.run_id == run_a_id, RunAblation.ablation == ablation)
+        )
+        abl_b = self.db.scalar(
+            select(RunAblation).where(RunAblation.run_id == run_b_id, RunAblation.ablation == ablation)
+        )
+        if abl_a is None or not abl_a.tensor_key:
+            raise KeyError(f"No tensor for run {run_a_id} / ablation {ablation}")
+        if abl_b is None or not abl_b.tensor_key:
+            raise KeyError(f"No tensor for run {run_b_id} / ablation {ablation}")
+
+        tensor_a = self.storage.get_numpy(abl_a.tensor_key)  # (T, V)
+        tensor_b = self.storage.get_numpy(abl_b.tensor_key)  # (T, V)
+        # Align time axes to the shorter run before differencing
+        min_t = min(tensor_a.shape[0], tensor_b.shape[0])
+        contrast = tensor_a[:min_t].mean(axis=0) - tensor_b[:min_t].mean(axis=0)  # (V,)
+
+        contrast_id = new_id("ctr")
+        contrast_key = self._artifact_key("contrasts", contrast_id, "contrast.npy")
+        self.storage.put_numpy(contrast_key, contrast)
+
+        row = Contrast(
+            id=contrast_id,
+            run_a_id=run_a_id,
+            run_b_id=run_b_id,
+            ablation=ablation,
+            mode=mode,
+            contrast_key=contrast_key,
+        )
+        self.db.add(row)
+        self._record_artifact("contrast", contrast_id, "contrast_npy", contrast_key, contrast.tobytes())
+        self._log("contrast.created", "contrast", contrast_id, {"run_a_id": run_a_id, "run_b_id": run_b_id})
+        self.db.commit()
+
+        # Also compute ROI-level deltas for the response summary
         top_a = self.get_top_rois(run_a_id, ablation, 10)["items"]
         top_b = self.get_top_rois(run_b_id, ablation, 10)["items"]
         lookup_b = {item["roi_id"]: item for item in top_b}
@@ -579,13 +643,31 @@ class AppService:
                     "delta_peak": item["peak_response"] - (other["peak_response"] if other else 0.0),
                 }
             )
-        roi_deltas.sort(key=lambda row: abs(row["delta_peak"]), reverse=True)
+        roi_deltas.sort(key=lambda r: abs(r["delta_peak"]), reverse=True)
+
         return {
+            "contrast_id": contrast_id,
             "run_a_id": run_a_id,
             "run_b_id": run_b_id,
             "ablation": ablation,
-            "global_mean_delta": float(np.mean(timeline_a["global_signal"]) - np.mean(timeline_b["global_signal"])),
+            "mode": mode,
+            "vertices_url": f"/api/v1/analysis/contrast/{contrast_id}/download",
+            "global_mean_delta": float(contrast.mean()),
             "roi_deltas": roi_deltas,
+        }
+
+    def get_contrast(self, contrast_id: str) -> dict:
+        row = self.db.get(Contrast, contrast_id)
+        if row is None:
+            raise KeyError(f"Unknown contrast {contrast_id}")
+        return {
+            "contrast_id": row.id,
+            "run_a_id": row.run_a_id,
+            "run_b_id": row.run_b_id,
+            "ablation": row.ablation,
+            "mode": row.mode,
+            "vertices_url": f"/api/v1/analysis/contrast/{contrast_id}/download",
+            "created_at": row.created_at.isoformat(),
         }
 
     def list_artifacts(self, run_id: str) -> list[dict]:

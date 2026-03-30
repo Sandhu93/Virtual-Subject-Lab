@@ -10,6 +10,19 @@ router = APIRouter(prefix="/stimuli", tags=["stimuli"])
 
 
 def _serialize_stimulus(stimulus) -> dict:
+    meta = stimulus.metadata_row
+    transcript_text = meta.transcript_text if meta else None
+    # word_timing_status reflects whether events with time-aligned tokens exist.
+    # For text stimuli the transcript is the original text (word timings are
+    # derived by the TRIBE adapter via TTS). For audio/video the transcript is
+    # populated after the run worker calls get_events_dataframe.
+    if transcript_text:
+        word_timing_status = "available"
+    elif stimulus.source_type == "text":
+        word_timing_status = "pending_run"  # will be derived from TTS on first run
+    else:
+        word_timing_status = "pending_run"
+
     return {
         "stimulus_id": stimulus.id,
         "name": stimulus.name,
@@ -20,6 +33,8 @@ def _serialize_stimulus(stimulus) -> dict:
         "duration_seconds": stimulus.duration_seconds,
         "checksum": stimulus.checksum_sha256,
         "created_at": stimulus.created_at.isoformat(),
+        "transcript": transcript_text,
+        "word_timing_status": word_timing_status,
     }
 
 

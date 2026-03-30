@@ -1,0 +1,27 @@
+# Real TRIBE v2 inference dependencies
+#
+# Install these only when TRIBE_MODE=real and a CUDA GPU is available.
+# The upstream tribev2 package is not on PyPI; install it from the source repo:
+#
+#   git clone https://github.com/facebookresearch/TRIBE
+#   cd TRIBE
+#   pip install -e ".[inference]"
+#
+# Pretrained weights are downloaded automatically from Hugging Face on first load:
+#   TribeModel.from_pretrained("facebook/tribev2", cache_folder=".cache/tribe")
+#
+# VRAM requirement: a single 32 GB GPU suffices for inference on clips up to ~90 s.
+# Set TRIBE_DEVICE=cpu for CPU-only inference (slow but usable for short clips).
+#
+# After installing the upstream package, set in .env:
+#   TRIBE_MODE=real
+#   TRIBE_DEVICE=cuda   # or cpu
+#   TRIBE_CACHE_DIR=/path/to/weights/cache
+
+# Hugging Face Hub (for weight downloads)
+huggingface-hub>=0.23.0
+
+# torch is a transitive requirement of tribev2 but pin a minimum for clarity
+torch>=2.1.0
+torchaudio>=2.1.0
+torchvision>=0.16.0

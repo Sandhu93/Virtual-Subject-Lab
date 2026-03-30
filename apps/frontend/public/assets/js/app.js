@@ -7,6 +7,7 @@ const state = {
   exports: [],
   roiMeta: [],
   runPollTimer: null,
+  viewer: null,   // BrainViewer instance
 };
 
 function parseRoute() {
@@ -113,12 +114,19 @@ async function loadStimuli() {
     tbody.innerHTML = "";
     state.stimuli.forEach((stimulus) => {
       const row = document.createElement("tr");
+      const transcriptPreview = stimulus.transcript
+        ? stimulus.transcript.length > 60
+          ? stimulus.transcript.slice(0, 60) + "…"
+          : stimulus.transcript
+        : "—";
       row.innerHTML = `
         <td>${stimulus.name}</td>
         <td>${stimulus.source_type}</td>
         <td>${stimulus.status}</td>
         <td>${(stimulus.modalities || []).join(", ")}</td>
-        <td>${(stimulus.duration_seconds || 0).toFixed(1)}</td>
+        <td>${(stimulus.duration_seconds || 0).toFixed(1)}s</td>
+        <td title="${stimulus.transcript || ""}">${transcriptPreview}</td>
+        <td>${stimulus.word_timing_status || "—"}</td>
       `;
       tbody.appendChild(row);
     });
@@ -190,49 +198,19 @@ async function loadRoiMeta() {
   );
 }
 
-function buildBrainNodes(frame) {
-  const container = document.getElementById("brain-nodes");
-  if (!container) return;
-  container.innerHTML = "";
-  frame.roi_frame.forEach((roi) => {
-    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    group.setAttribute("class", "brain-node");
-    group.dataset.roiId = roi.roi_id;
-    group.dataset.hemisphere = roi.hemisphere;
+function getOrCreateViewer() {
+  if (state.viewer) return state.viewer;
+  const canvas = document.getElementById("brain-canvas");
+  if (!canvas || !window.BrainViewer) return null;
+  state.viewer = BrainViewer.init(canvas);
 
-    const cx = roi.hemisphere === "left" ? 40 + roi.x * 280 : 400 + (roi.x - 0.5) * 280;
-    const cy = 40 + (1 - roi.y) * 300;
-
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("cx", String(cx));
-    circle.setAttribute("cy", String(cy));
-    circle.setAttribute("r", "18");
-
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", String(cx + 22));
-    text.setAttribute("y", String(cy + 4));
-    text.textContent = roi.base_roi;
-
-    group.appendChild(circle);
-    group.appendChild(text);
-    container.appendChild(group);
+  // Keep time slider in sync when the viewer advances during playback
+  canvas.addEventListener("viewer-timechange", (e) => {
+    const slider = document.getElementById("time-slider");
+    if (slider) slider.value = e.detail.timeIndex;
   });
-}
 
-function applyViewerFrame(frame, threshold, rightBias, parcelToggle) {
-  const nodes = document.querySelectorAll(".brain-node");
-  const lookup = Object.fromEntries(frame.roi_frame.map((item) => [item.roi_id, item]));
-  nodes.forEach((node) => {
-    const roi = lookup[node.dataset.roiId];
-    if (!roi) return;
-    const circle = node.querySelector("circle");
-    const label = node.querySelector("text");
-    const value = Math.max(0, roi.value);
-    const alpha = value < threshold ? 0.14 : Math.min(0.95, 0.2 + value);
-    const bias = rightBias && node.dataset.hemisphere === "left" ? 0.35 : 1;
-    circle.style.fill = `rgba(148, 76, 42, ${alpha * bias})`;
-    label.style.display = parcelToggle ? "block" : "none";
-  });
+  return state.viewer;
 }
 
 async function loadRunWorkspace(runId) {
@@ -260,22 +238,26 @@ async function loadRunWorkspace(runId) {
       return;
     }
 
+    // ── Timeline ────────────────────────────────────────────────────────────
     const timeline = await apiFetch(`/runs/${runId}/timeline?ablation=${encodeURIComponent(ablation)}`);
     const timeSlider = document.getElementById("time-slider");
     timeSlider.max = Math.max(0, timeline.n_timesteps - 1);
     renderLineChart(document.getElementById("timeline-chart"), timeline.global_signal, { width: 560, height: 180 });
 
-    const frame = await apiFetch(
-      `/runs/${runId}/frames/${timeSlider.value || 0}?ablation=${encodeURIComponent(ablation)}`
-    );
-    buildBrainNodes(frame);
-    applyViewerFrame(
-      frame,
-      Number(document.getElementById("threshold-slider").value),
-      document.getElementById("hemisphere-toggle").checked,
-      document.getElementById("parcel-toggle").checked
-    );
+    // ── WebGL viewer ────────────────────────────────────────────────────────
+    const viewer = getOrCreateViewer();
+    if (viewer) {
+      const threshold = Number(document.getElementById("threshold-slider").value);
+      const hemMode = document.getElementById("hemisphere-toggle").checked ? "right" : "both";
+      const parcel  = document.getElementById("parcel-toggle").checked;
+      viewer.setRunConfig(runId, ablation, timeline.n_timesteps, API_BASE);
+      viewer.setThreshold(threshold);
+      viewer.setHemisphere(hemMode);
+      viewer.setParcelOverlay(parcel);
+      viewer.setTimeIndex(Number(timeSlider.value) || 0);
+    }
 
+    // ── Top ROIs ─────────────────────────────────────────────────────────────
     const top = await apiFetch(
       `/analysis/top-rois?run_id=${encodeURIComponent(runId)}&ablation=${encodeURIComponent(ablation)}&limit=10`
     );
@@ -287,16 +269,22 @@ async function loadRunWorkspace(runId) {
       list.appendChild(li);
     });
 
+    // ── ROI trace ─────────────────────────────────────────────────────────────
     const roiSelect = document.getElementById("roi-select");
     const roiId = roiSelect.value || state.roiMeta[0]?.roi_id;
-    const trace = await apiFetch("/analysis/roi-traces", {
-      method: "POST",
-      body: JSON.stringify({ run_id: runId, ablation, roi_ids: [roiId] }),
-    });
-    if (trace.traces.length) {
-      renderLineChart(document.getElementById("roi-trace-chart"), trace.traces[0].mean_trace, { width: 320, height: 160 });
+    if (roiId) {
+      const trace = await apiFetch("/analysis/roi-traces", {
+        method: "POST",
+        body: JSON.stringify({ run_id: runId, ablation, roi_ids: [roiId] }),
+      });
+      if (trace.traces.length) {
+        renderLineChart(document.getElementById("roi-trace-chart"), trace.traces[0].mean_trace, { width: 320, height: 160 });
+      }
     }
+
     setFeedback(feedback, { run_id: runId, status: run.status, ablation });
+    // Persist viewer state in the URL so the link is shareable
+    pushViewerState();
   } catch (error) {
     setFeedback(feedback, { error: error.message });
   }
@@ -305,6 +293,63 @@ async function loadRunWorkspace(runId) {
 function currentRunId() {
   const { params } = parseRoute();
   return params.get("id") || document.getElementById("run-select")?.value || "";
+}
+
+/**
+ * Build a hash URL that encodes the full viewer state so the link is shareable.
+ * Parameters: id, ablation, threshold, hemisphere (left|right|both), time.
+ */
+function viewerStateParams() {
+  const p = new URLSearchParams();
+  const runId = currentRunId();
+  if (runId) p.set("id", runId);
+
+  const ablation = document.getElementById("ablation-select")?.value;
+  if (ablation) p.set("ablation", ablation);
+
+  const threshold = document.getElementById("threshold-slider")?.value;
+  if (threshold) p.set("threshold", threshold);
+
+  const rightBias = document.getElementById("hemisphere-toggle")?.checked;
+  p.set("hemisphere", rightBias ? "right" : "both");
+
+  const time = document.getElementById("time-slider")?.value;
+  if (time) p.set("time", time);
+
+  return p;
+}
+
+function pushViewerState() {
+  const p = viewerStateParams();
+  const hash = `#/runs?${p.toString()}`;
+  // Use replaceState so back-navigation works naturally
+  if (window.location.hash !== hash) {
+    history.replaceState(null, "", hash);
+  }
+}
+
+function restoreViewerStateFromParams(params) {
+  const ablation   = params.get("ablation");
+  const threshold  = params.get("threshold");
+  const hemisphere = params.get("hemisphere");
+  const time       = params.get("time");
+
+  if (ablation) {
+    const sel = document.getElementById("ablation-select");
+    if (sel) sel.value = ablation;
+  }
+  if (threshold) {
+    const slider = document.getElementById("threshold-slider");
+    if (slider) slider.value = threshold;
+  }
+  if (hemisphere) {
+    const tog = document.getElementById("hemisphere-toggle");
+    if (tog) tog.checked = hemisphere === "right";
+  }
+  if (time) {
+    const slider = document.getElementById("time-slider");
+    if (slider) slider.value = time;
+  }
 }
 
 function navigateToRun(runId) {
@@ -383,13 +428,61 @@ function bindHandlers() {
     navigateToRun(event.target.value);
   });
 
-  ["ablation-select", "roi-select", "threshold-slider", "time-slider", "hemisphere-toggle", "parcel-toggle"]
-    .forEach((id) => {
-      document.getElementById(id)?.addEventListener("input", () => loadRunWorkspace(currentRunId()));
-      document.getElementById(id)?.addEventListener("change", () => loadRunWorkspace(currentRunId()));
-    });
+  // Controls that require a full workspace reload (new ablation or ROI selection)
+  ["ablation-select", "roi-select"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", () => loadRunWorkspace(currentRunId()));
+  });
 
-  document.getElementById("snapshot-button")?.addEventListener("click", () => loadRunWorkspace(currentRunId()));
+  // Threshold: update viewer directly without API round-trip
+  document.getElementById("threshold-slider")?.addEventListener("input", (e) => {
+    const viewer = getOrCreateViewer();
+    if (viewer) viewer.setThreshold(Number(e.target.value));
+  });
+
+  // Time scrubber: fetch new vertex frame
+  document.getElementById("time-slider")?.addEventListener("input", (e) => {
+    const viewer = getOrCreateViewer();
+    if (viewer) viewer.setTimeIndex(Number(e.target.value));
+  });
+
+  // Hemisphere toggle: update viewer directly
+  document.getElementById("hemisphere-toggle")?.addEventListener("change", (e) => {
+    const viewer = getOrCreateViewer();
+    if (viewer) viewer.setHemisphere(e.target.checked ? "right" : "both");
+  });
+
+  // Parcel overlay toggle
+  document.getElementById("parcel-toggle")?.addEventListener("change", (e) => {
+    const viewer = getOrCreateViewer();
+    if (viewer) viewer.setParcelOverlay(e.target.checked);
+  });
+
+  document.getElementById("play-button")?.addEventListener("click", () => {
+    const viewer = getOrCreateViewer();
+    if (!viewer) return;
+    viewer.play();
+    document.getElementById("play-button").disabled  = true;
+    document.getElementById("pause-button").disabled = false;
+  });
+
+  document.getElementById("pause-button")?.addEventListener("click", () => {
+    const viewer = getOrCreateViewer();
+    if (!viewer) return;
+    viewer.pause();
+    document.getElementById("play-button").disabled  = false;
+    document.getElementById("pause-button").disabled = true;
+  });
+
+  document.getElementById("snapshot-button")?.addEventListener("click", () => {
+    const viewer = getOrCreateViewer();
+    if (viewer) {
+      const url = viewer.snapshot();
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `snapshot_${Date.now()}.png`;
+      a.click();
+    }
+  });
 
   document.getElementById("export-button")?.addEventListener("click", async () => {
     const feedback = document.getElementById("workspace-feedback");
@@ -412,15 +505,20 @@ function bindHandlers() {
     const feedback = document.getElementById("compare-feedback");
     const tbody = document.querySelector("#compare-table tbody");
     try {
-      const payload = await apiFetch("/analysis/compare", {
+      const payload = await apiFetch("/analysis/contrast", {
         method: "POST",
         body: JSON.stringify({
           run_a_id: form.get("run_a_id"),
           run_b_id: form.get("run_b_id"),
           ablation: form.get("ablation"),
+          mode: "mean_difference",
         }),
       });
-      setFeedback(feedback, { global_mean_delta: payload.global_mean_delta });
+      setFeedback(feedback, {
+        contrast_id: payload.contrast_id,
+        global_mean_delta: payload.global_mean_delta,
+        vertices_url: payload.vertices_url,
+      });
       tbody.innerHTML = "";
       payload.roi_deltas.forEach((item) => {
         const row = document.createElement("tr");
@@ -474,10 +572,13 @@ async function renderRoute() {
     await Promise.all([loadRuns(), loadExports()]);
   }
   if (normalized === "runs") {
+    const { params } = parseRoute();
     await Promise.all([loadRuns(), loadRoiMeta()]);
     const runId = currentRunId();
     if (runId) {
       document.getElementById("run-select").value = runId;
+      // Restore slider/toggle values from URL params before loading workspace
+      restoreViewerStateFromParams(params);
       await loadRunWorkspace(runId);
       const run = state.runs.find((item) => item.run_id === runId);
       if (run && run.status !== "succeeded") {

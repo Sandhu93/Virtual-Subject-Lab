@@ -28,10 +28,11 @@ class RoiTraceRequest(BaseModel):
     roi_ids: list[str] = Field(min_length=1)
 
 
-class CompareRequest(BaseModel):
+class ContrastRequest(BaseModel):
     run_a_id: str
     run_b_id: str
     ablation: str = "full"
+    mode: str = "mean_difference"
 
 
 class ExportCreateRequest(BaseModel):

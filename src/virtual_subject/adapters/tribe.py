@@ -70,6 +70,17 @@ class RealTribeAdapter:
     def __init__(self) -> None:
         self.settings = get_settings()
         self._model = None
+        # Validate the upstream package is installed at construction time so
+        # the worker fails immediately with a clear message rather than on the
+        # first inference call.
+        try:
+            import tribev2  # noqa: F401
+        except ImportError as exc:
+            raise ImportError(
+                "TRIBE_MODE=real requires the upstream tribev2 package, which is "
+                "not installed. Follow the instructions in requirements-real.txt to "
+                "install it from the source repo before switching to real mode."
+            ) from exc
 
     def _load_model(self):
         if self._model is None:

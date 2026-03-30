@@ -23,6 +23,34 @@ postgres-data/
 *.sqlite3
 *.db
 
+
+# Frontend build and dependencies
+apps/frontend/node_modules/
+apps/frontend/dist/
+apps/frontend/.vite/
+apps/frontend/.vite-temp/
+apps/frontend/public/assets/js/*.js.map
+
+# Atlas and test fixture assets (generated)
+packages/atlas-assets/
+packages/test-fixtures/
+
+# Alembic cache
+alembic/__pycache__/
+alembic/versions/__pycache__/
+
+# Miscellaneous
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*.DS_Store
+Thumbs.db
+
+!packages/atlas-assets/.gitkeep
+!packages/test-fixtures/.gitkeep
+
 what_app_should_do.txt
 implementation_blueprint.txt
 initialization_prompt.txt

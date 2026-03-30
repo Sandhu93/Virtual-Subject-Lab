@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid-shell">
+  <article class="panel">
+    <p class="eyebrow">Text stimulus</p>
+    <h2>Paste text</h2>
+    <form id="text-stimulus-form" class="stack">
+      <label>
+        <span>Name</span>
+        <input type="text" name="name" value="Text stimulus" required>
+      </label>
+      <label>
+        <span>Stimulus text</span>
+        <textarea name="text" rows="8" required>The sailors are annoyed by the noise of the seagulls.</textarea>
+      </label>
+      <button type="submit">Create text stimulus</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <p class="eyebrow">File stimulus</p>
+    <h2>Upload audio or video</h2>
+    <form id="file-stimulus-form" class="stack">
+      <label>
+        <span>Name</span>
+        <input type="text" name="name" value="Uploaded stimulus" required>
+      </label>
+      <label>
+        <span>Source type</span>
+        <select name="source_type">
+          <option value="audio">Audio</option>
+          <option value="video">Video</option>
+        </select>
+      </label>
+      <label>
+        <span>File</span>
+        <input type="file" name="file" accept="audio/*,video/*" required>
+      </label>
+      <button type="submit">Upload and finalize</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <p class="eyebrow">Run setup</p>
+    <h2>Queue a run</h2>
+    <form id="run-create-form" class="stack">
+      <label>
+        <span>Stimulus</span>
+        <select name="stimulus_id" id="stimulus-select" required>
+          {% for stimulus in stimuli %}
+          <option value="{{ stimulus.id }}">{{ stimulus.name }} · {{ stimulus.source_type }} · {{ stimulus.status }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Ablations</span>
+        <input type="text" name="ablations" value="full,text_only,audio_only,video_only,text_audio,text_video,audio_video">
+      </label>
+      <button type="submit">Create run</button>
+    </form>
+    <p class="meta-copy">Stimuli are hashed on finalize. Matching run configs reuse the cached successful run.</p>
+    <pre id="stimulus-feedback" class="feedback"></pre>
+  </article>
+</section>
+
+<section class="panel">
+  <p class="eyebrow">Current stimuli</p>
+  <h2>Recent stimuli</h2>
+  <table class="simple-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Modalities</th>
+        <th>Duration</th>
+      </tr>
+    </thead>
+    <tbody id="stimuli-table-body">
+      {% for stimulus in stimuli %}
+      <tr>
+        <td>{{ stimulus.name }}</td>
+        <td>{{ stimulus.source_type }}</td>
+        <td>{{ stimulus.status }}</td>
+        <td>{{ stimulus.modalities | join(", ") }}</td>
+        <td>{{ "%.1f"|format(stimulus.duration_seconds or 0) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

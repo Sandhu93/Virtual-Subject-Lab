@@ -4,9 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ app_name }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@knadh/oat@{{ oat_version }}/dist/oat.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
   </head>
-  <body>
+  <body data-page="{{ page or 'home' }}">
     <header class="shell-header">
       <div>
         <p class="eyebrow">TRIBE v2 research MVP</p>
@@ -14,12 +15,18 @@
       </div>
       <nav>
         <a href="/">Home</a>
+        <a href="/stimuli/new">Stimuli</a>
+        <a href="/compare">Compare</a>
+        <a href="/exports">Exports</a>
+        <a href="/about">About</a>
       </nav>
     </header>
     <main>
       {% block content %}{% endblock %}
     </main>
+    <template id="roi-option-template">
+      <option></option>
+    </template>
     <script src="/static/js/app.js" defer></script>
   </body>
 </html>
-

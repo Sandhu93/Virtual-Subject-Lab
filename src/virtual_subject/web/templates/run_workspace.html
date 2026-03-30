@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid-shell workspace-shell" data-run-id="{{ run.id }}">
+  <aside class="panel">
+    <p class="eyebrow">Run</p>
+    <h2>{{ run.id }}</h2>
+    <p class="meta-copy">Status: <strong id="run-status">{{ run.status }}</strong></p>
+    <p class="meta-copy">Average unseen subject · cortical only · research use only</p>
+    <label>
+      <span>Ablation</span>
+      <select id="ablation-select">
+        {% for item in run_ablations %}
+        <option value="{{ item.ablation }}">{{ item.ablation }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>ROI quick-pick</span>
+      <select id="roi-select">
+        {% for roi in roi_metadata %}
+        <option value="{{ roi.roi_id }}">{{ roi.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Threshold</span>
+      <input id="threshold-slider" type="range" min="0" max="1" step="0.05" value="0.25">
+    </label>
+    <label>
+      <span>Time scrubber</span>
+      <input id="time-slider" type="range" min="0" max="0" step="1" value="0">
+    </label>
+    <div class="toggle-row">
+      <label><input id="hemisphere-toggle" type="checkbox"> Right emphasis</label>
+      <label><input id="parcel-toggle" type="checkbox" checked> Parcel labels</label>
+    </div>
+    <button id="snapshot-button" type="button">Refresh frame</button>
+    <button id="export-button" type="button">Create export bundle</button>
+    <pre id="workspace-feedback" class="feedback"></pre>
+  </aside>
+
+  <section class="panel viewer-panel">
+    <p class="eyebrow">Cortical viewer</p>
+    <h2>ROI surface summary over time</h2>
+    <svg id="brain-viewer" viewBox="0 0 720 420" role="img" aria-label="Cortical ROI map">
+      <ellipse cx="180" cy="220" rx="140" ry="150"></ellipse>
+      <ellipse cx="540" cy="220" rx="140" ry="150"></ellipse>
+      {% for roi in roi_metadata %}
+      <g class="brain-node" data-roi-id="{{ roi.roi_id }}" data-hemisphere="{{ roi.hemisphere }}">
+        {% if roi.hemisphere == "left" %}
+        <circle cx="{{ 40 + roi.x * 280 }}" cy="{{ 40 + (1.0 - roi.y) * 300 }}" r="18"></circle>
+        <text x="{{ 40 + roi.x * 280 + 22 }}" y="{{ 40 + (1.0 - roi.y) * 300 + 4 }}">
+          {{ roi.base_roi }}
+        </text>
+        {% else %}
+        <circle cx="{{ 400 + (roi.x - 0.5) * 280 }}" cy="{{ 40 + (1.0 - roi.y) * 300 }}" r="18"></circle>
+        <text x="{{ 400 + (roi.x - 0.5) * 280 + 22 }}" y="{{ 40 + (1.0 - roi.y) * 300 + 4 }}">
+          {{ roi.base_roi }}
+        </text>
+        {% endif %}
+      </g>
+      {% endfor %}
+    </svg>
+    <div id="timeline-chart" class="chart-box"></div>
+  </section>
+
+  <aside class="panel">
+    <p class="eyebrow">ROI summaries</p>
+    <h2>Top responding ROIs</h2>
+    <ol id="top-roi-list" class="compact-list"></ol>
+    <div class="trace-shell">
+      <p class="eyebrow">ROI trace</p>
+      <div id="roi-trace-chart" class="chart-box"></div>
+    </div>
+    <div class="notes-shell">
+      <p class="eyebrow">Caveats</p>
+      <p class="meta-copy">
+        These are predicted hemodynamically delayed BOLD-like responses for an average subject, not real-time neural firing.
+      </p>
+    </div>
+  </aside>
+</section>
+{% endblock %}

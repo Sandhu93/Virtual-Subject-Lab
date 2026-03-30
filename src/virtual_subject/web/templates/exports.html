@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid-shell">
+  <article class="panel">
+    <p class="eyebrow">Exports</p>
+    <h2>Create bundle</h2>
+    <form id="export-form" class="stack">
+      <label>
+        <span>Run</span>
+        <select name="run_id" required>
+          {% for run in runs %}
+          <option value="{{ run.id }}">{{ run.id }} · {{ run.status }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Queue export</button>
+    </form>
+    <pre id="export-feedback" class="feedback"></pre>
+  </article>
+
+  <article class="panel">
+    <p class="eyebrow">History</p>
+    <h2>Bundles</h2>
+    <table class="simple-table">
+      <thead>
+        <tr>
+          <th>Export</th>
+          <th>Run</th>
+          <th>Status</th>
+          <th>Bundle</th>
+        </tr>
+      </thead>
+      <tbody id="exports-table-body">
+        {% for export in exports %}
+        <tr>
+          <td>{{ export.id }}</td>
+          <td>{{ export.run_id }}</td>
+          <td>{{ export.status }}</td>
+          <td>
+            {% if export.bundle_key %}
+            <a href="/api/v1/exports/{{ export.id }}/download">Download</a>
+            {% else %}
+            Pending
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+{% endblock %}
+

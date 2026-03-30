@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid-shell">
+  <article class="panel">
+    <p class="eyebrow">Batch compare</p>
+    <h2>Contrast two runs</h2>
+    <form id="compare-form" class="stack">
+      <label>
+        <span>Run A</span>
+        <select name="run_a_id" required>
+          {% for run in runs %}
+          <option value="{{ run.id }}">{{ run.id }} · {{ run.status }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Run B</span>
+        <select name="run_b_id" required>
+          {% for run in runs %}
+          <option value="{{ run.id }}">{{ run.id }} · {{ run.status }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Ablation</span>
+        <select name="ablation">
+          <option value="full">full</option>
+          <option value="text_only">text_only</option>
+          <option value="audio_only">audio_only</option>
+          <option value="video_only">video_only</option>
+          <option value="text_audio">text_audio</option>
+          <option value="text_video">text_video</option>
+          <option value="audio_video">audio_video</option>
+        </select>
+      </label>
+      <button type="submit">Compare runs</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <p class="eyebrow">Output</p>
+    <h2>Contrast summary</h2>
+    <pre id="compare-feedback" class="feedback"></pre>
+    <table class="simple-table" id="compare-table">
+      <thead>
+        <tr>
+          <th>ROI</th>
+          <th>Run A peak</th>
+          <th>Run B peak</th>
+          <th>Delta</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </article>
+</section>
+{% endblock %}
+

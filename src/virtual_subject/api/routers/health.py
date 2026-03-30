@@ -1,8 +1,12 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter
+from sqlalchemy import text
 
+from virtual_subject.adapters.storage import get_storage
 from virtual_subject.config import get_settings
+from virtual_subject.db.models import WorkerHeartbeat
+from virtual_subject.db.session import SessionLocal, engine
 
 router = APIRouter(tags=["health"])
 settings = get_settings()
@@ -20,25 +24,37 @@ def health() -> dict[str, str]:
 
 @router.get("/health/db")
 def health_db() -> dict[str, str]:
-    return {"status": "unknown", "service": "db", "detail": "database probe not implemented yet"}
+    with engine.connect() as connection:
+        connection.execute(text("select 1"))
+    return {"status": "ok", "service": "db"}
 
 
 @router.get("/health/storage")
 def health_storage() -> dict[str, str]:
+    storage = get_storage()
+    _ = storage.__class__.__name__
     return {
-        "status": "unknown",
+        "status": "ok",
         "service": "storage",
         "backend": settings.storage_backend,
-        "detail": "storage probe not implemented yet",
     }
 
 
 @router.get("/health/worker")
 def health_worker() -> dict[str, str]:
+    with SessionLocal() as db:
+        heartbeat = db.get(WorkerHeartbeat, "worker-1")
+    if heartbeat is None:
+        return {
+            "status": "unknown",
+            "service": "worker",
+            "mode": settings.tribe_mode,
+            "detail": "worker has not reported in yet",
+        }
+    stale = datetime.now(UTC) - heartbeat.last_seen_at > timedelta(seconds=settings.worker_poll_seconds * 5)
     return {
-        "status": "unknown",
+        "status": "stale" if stale else "ok",
         "service": "worker",
-        "mode": settings.tribe_mode,
-        "detail": "worker heartbeat not implemented yet",
+        "mode": heartbeat.mode,
+        "last_seen_at": heartbeat.last_seen_at.isoformat(),
     }
-

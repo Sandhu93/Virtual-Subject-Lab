@@ -25,6 +25,16 @@ a {
   color: var(--accent);
 }
 
+nav {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+nav a {
+  text-decoration: none;
+}
+
 .shell-header,
 .hero {
   width: min(1100px, calc(100% - 2rem));
@@ -74,3 +84,147 @@ ul {
   padding-left: 1.25rem;
 }
 
+.compact-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.grid-shell {
+  width: min(1100px, calc(100% - 2rem));
+  margin: 0 auto 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.workspace-shell {
+  grid-template-columns: 300px 1fr 300px;
+  align-items: start;
+}
+
+.stack {
+  display: grid;
+  gap: 0.9rem;
+}
+
+label,
+label span {
+  display: block;
+}
+
+input,
+select,
+textarea,
+button {
+  width: 100%;
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  margin-top: 0.25rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fffef9;
+}
+
+button {
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.meta-copy {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.feedback {
+  min-height: 6rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: #f3eee4;
+  border: 1px dashed var(--border);
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.simple-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.simple-table th,
+.simple-table td {
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.viewer-panel {
+  min-height: 540px;
+}
+
+#brain-viewer {
+  width: 100%;
+  height: auto;
+  background: linear-gradient(180deg, #fffcf7 0%, #f4efe5 100%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  margin-bottom: 1rem;
+}
+
+#brain-viewer ellipse {
+  fill: rgba(255, 255, 255, 0.4);
+  stroke: rgba(40, 79, 59, 0.45);
+  stroke-width: 2;
+}
+
+.brain-node circle {
+  fill: rgba(148, 76, 42, 0.14);
+  transition: fill 160ms ease;
+}
+
+.brain-node text {
+  font-size: 10px;
+  fill: var(--ink);
+}
+
+.chart-box {
+  min-height: 160px;
+}
+
+.spark-svg {
+  width: 100%;
+  height: auto;
+}
+
+.spark-svg rect {
+  fill: #fffef8;
+  stroke: var(--border);
+}
+
+.spark-svg polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.toggle-row {
+  display: grid;
+  gap: 0.5rem;
+}
+
+@media (max-width: 980px) {
+  .workspace-shell {
+    grid-template-columns: 1fr;
+  }
+}

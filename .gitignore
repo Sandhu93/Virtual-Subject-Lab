@@ -22,3 +22,9 @@ minio-data/
 postgres-data/
 *.sqlite3
 *.db
+
+what_app_should_do.txt
+implementation_blueprint.txt
+initialization_prompt.txt
+research_paper.pdf
+pytest-cache-*

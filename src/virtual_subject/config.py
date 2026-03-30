@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     )
     default_user_name: str = Field(default="Researcher", alias="DEFAULT_USER_NAME")
 
-    oat_version: str = Field(default="0.5.1", alias="OAT_VERSION")
+    oat_version: str = Field(default="0.5.0", alias="OAT_VERSION")
     app_git_commit: str = Field(default="unknown", alias="APP_GIT_COMMIT")
 
 

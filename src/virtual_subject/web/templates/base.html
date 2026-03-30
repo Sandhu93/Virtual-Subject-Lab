@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ app_name }}</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@knadh/oat@{{ oat_version }}/dist/oat.min.css">
+    <link rel="stylesheet" href="/static/vendor/oat/oat.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
   </head>
   <body data-page="{{ page or 'home' }}">
@@ -27,6 +27,7 @@
     <template id="roi-option-template">
       <option></option>
     </template>
+    <script src="/static/vendor/oat/oat.min.js" defer></script>
     <script src="/static/js/app.js" defer></script>
   </body>
 </html>

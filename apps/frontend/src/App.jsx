@@ -17,9 +17,10 @@ const ROUTES = {
 
 const NAV = [
   ["#/", "Home", "home"],
-  ["#/stimuli", "Stimuli", "stimuli"],
-  ["#/compare", "Compare", "compare"],
-  ["#/exports", "Exports", "exports"],
+  ["#/stimuli", "1 · Stimuli", "stimuli"],
+  ["#/runs", "2 · Runs", "runs"],
+  ["#/compare", "3 · Compare", "compare"],
+  ["#/exports", "4 · Export", "exports"],
   ["#/about", "About", "about"],
 ];
 

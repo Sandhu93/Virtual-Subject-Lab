@@ -1,4 +1,8 @@
-export const API_BASE = `${location.protocol}//${location.hostname}:8000/api/v1`;
+// Use a relative path so the nginx reverse proxy handles routing.
+// This works both locally (nginx proxies /api/ → api:8000) and on RunPod
+// (where each exposed port gets a different proxy hostname, making an
+// absolute http://hostname:8000 URL unreachable from the browser).
+export const API_BASE = `/api/v1`;
 
 export async function apiFetch(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {

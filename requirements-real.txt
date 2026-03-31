@@ -1,24 +1,40 @@
 # Real TRIBE v2 inference dependencies
 #
-# Install these only when TRIBE_MODE=real and a CUDA GPU is available.
-# The upstream tribev2 package is not on PyPI; install it from the source repo:
+# VRAM requirement:
+#   TRIBE v2 loads three frozen encoders simultaneously:
+#     - LLaMA 3.2-3B (text)        ~6 GB in float16
+#     - V-JEPA2-ViT-G (video)      ~2-4 GB in float16
+#     - Wav2Vec-BERT 2.0 (audio)   ~1.2 GB in float16
+#     - TRIBE prediction head      ~709 MB
+#   Total: ~16+ GB VRAM for comfortable GPU inference.
+#   A GPU with <16 GB VRAM (e.g. RTX 3060 6 GB) cannot run on CUDA.
+#   Set TRIBE_DEVICE=cpu for CPU inference (uses system RAM, no VRAM limit).
+#   A 30-second clip on CPU takes approximately 30-60 minutes.
 #
-#   git clone https://github.com/facebookresearch/TRIBE
-#   cd TRIBE
-#   pip install -e ".[inference]"
+# LLaMA 3.2-3B is a gated model. Before running:
+#   1. Create a HuggingFace account at https://huggingface.co
+#   2. Accept the Meta license at https://huggingface.co/meta-llama/Llama-3.2-3B
+#   3. Create a token at https://huggingface.co/settings/tokens
+#   4. Add HF_TOKEN=hf_... to your .env file
 #
-# Pretrained weights are downloaded automatically from Hugging Face on first load:
+# Install tribev2 from the public GitHub repo:
+#   git clone https://github.com/facebookresearch/tribev2.git
+#   cd tribev2
+#   pip install -e .
+# Note: tribev2 has no [inference] extra — the base install is inference-ready.
+#
+# Or use the GPU docker override which does this automatically:
+#   docker compose -f infra/compose.yaml -f infra/compose.gpu.yaml up --build
+#
+# Pretrained weights download automatically from HuggingFace on first load:
 #   TribeModel.from_pretrained("facebook/tribev2", cache_folder=".cache/tribe")
 #
-# VRAM requirement: a single 32 GB GPU suffices for inference on clips up to ~90 s.
-# Set TRIBE_DEVICE=cpu for CPU-only inference (slow but usable for short clips).
-#
-# After installing the upstream package, set in .env:
+# After installing, set in .env:
 #   TRIBE_MODE=real
-#   TRIBE_DEVICE=cuda   # or cpu
-#   TRIBE_CACHE_DIR=/path/to/weights/cache
+#   TRIBE_DEVICE=cpu   # or cuda if you have 16+ GB VRAM
+#   HF_TOKEN=hf_...
 
-# Hugging Face Hub (for weight downloads)
+# Hugging Face Hub (for weight and gated model downloads)
 huggingface-hub>=0.23.0
 
 # torch is a transitive requirement of tribev2 but pin a minimum for clarity

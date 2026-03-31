@@ -14,3 +14,6 @@ RUN npm run build
 # ── Runtime stage ───────────────────────────────────────────────────────────────
 FROM nginx:1.27-alpine
 COPY --from=build /build/dist /usr/share/nginx/html
+# Custom nginx config: proxies /api/ → api:8000 so the SPA uses relative URLs.
+# Required for RunPod (where the API port has a different proxy hostname).
+COPY apps/frontend/nginx.conf /etc/nginx/conf.d/default.conf

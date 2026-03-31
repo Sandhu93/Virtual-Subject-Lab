@@ -10,4 +10,14 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
   },
+  server: {
+    // In dev mode, proxy /api/ to the API service so relative URLs work
+    // the same way as in production (where nginx handles the proxying).
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+    },
+  },
 });

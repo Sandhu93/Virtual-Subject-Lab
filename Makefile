@@ -12,7 +12,7 @@ logs:
 	$(COMPOSE) logs -f
 
 test:
-	pytest
+	.venv/Scripts/python.exe -m pytest tests/ -v
 
 lint:
 	ruff check .

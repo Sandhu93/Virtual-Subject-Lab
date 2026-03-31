@@ -1,0 +1,45 @@
+# GPU override for real TRIBE v2 inference.
+#
+# Usage:
+#   docker compose -f infra/compose.yaml -f infra/compose.gpu.yaml up --build
+#
+# Prerequisites:
+#   1. NVIDIA Container Toolkit installed on the host
+#      (verify: docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu22.04 nvidia-smi)
+#   2. A .env file in the repo root with at minimum:
+#      TRIBE_MODE=real
+#      TRIBE_DEVICE=cpu      # RTX 3060 has 6 GB VRAM; TRIBE v2 needs ~16 GB — use cpu
+#      TRIBE_CACHE_DIR=/app/.cache/tribe
+#      HF_TOKEN=hf_...       # required — LLaMA 3.2-3B inside TRIBE is a gated HF model
+#                             # Get token at: https://huggingface.co/settings/tokens
+#                             # Accept license at: https://huggingface.co/meta-llama/Llama-3.2-3B
+#   3. tribev2 GitHub repo: https://github.com/facebookresearch/tribev2 (public)
+#
+# The tribe-weights volume persists model weights across container restarts.
+# First run downloads several GB from HuggingFace.
+
+services:
+  api:
+    env_file:
+      - ../.env
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/docker/worker-gpu.Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      - HF_TOKEN=${HF_TOKEN}  # HuggingFace token for gated LLaMA 3.2-3B download
+    volumes:
+      - tribe-weights:/app/.cache/tribe
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  tribe-weights:

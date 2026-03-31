@@ -17,6 +17,11 @@ class Settings(BaseSettings):
         default="http://localhost:3000,http://127.0.0.1:3000",
         alias="FRONTEND_ORIGINS",
     )
+    # Optional regex applied to the Origin header in addition to the explicit
+    # frontend_origins list.  Useful for dynamic hostnames such as RunPod's
+    # per-pod proxy domains.  Example:
+    #   CORS_ORIGIN_REGEX=https://.*\.proxy\.runpod\.net
+    cors_origin_regex: str | None = Field(default=None, alias="CORS_ORIGIN_REGEX")
 
     database_url: str = Field(
         default="postgresql+psycopg://virtual_subject:virtual_subject@localhost:5432/virtual_subject",

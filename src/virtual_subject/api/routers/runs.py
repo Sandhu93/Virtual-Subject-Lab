@@ -82,6 +82,14 @@ def get_timeline(run_id: str, ablation: str = "full", service: AppService = Depe
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/{run_id}/events")
+def get_run_events(run_id: str, ablation: str = "full", service: AppService = Depends(get_service)) -> dict:
+    try:
+        return service.get_run_events(run_id, ablation)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/{run_id}/frames/{time_index}")
 def get_frame(
     run_id: str,
@@ -126,4 +134,3 @@ def get_frame_vertices(
             "X-Ablation": ablation,
         },
     )
-

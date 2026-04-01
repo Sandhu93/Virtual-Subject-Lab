@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch, API_BASE } from "../api";
 import BrainCanvas from "../components/BrainCanvas";
 import LineChart from "../components/LineChart";
@@ -38,9 +38,12 @@ export default function Runs({ params }) {
   const [nTimesteps, setNTimesteps] = useState(0);
   const [timeline, setTimeline] = useState(null);
   const [topRois, setTopRois] = useState([]);
+  const [frameRois, setFrameRois] = useState([]);
+  const [frameEvents, setFrameEvents] = useState([]);
   const [roiId, setRoiId] = useState("");
   const [roiTrace, setRoiTrace] = useState(null);
   const [feedback, setFeedback] = useState("");
+  const [stimulus, setStimulus] = useState(null);
 
   const viewerRef = useRef(null);
 
@@ -55,7 +58,6 @@ export default function Runs({ params }) {
       .catch(() => {});
   }, []);
 
-  // Main workspace load + poll until succeeded
   useEffect(() => {
     if (!runId) return;
     let cancelled = false;
@@ -84,6 +86,14 @@ export default function Runs({ params }) {
       setNTimesteps(tl.n_timesteps);
       setLoading(false);
 
+      if (r.stimulus_id) {
+        apiFetch(`/stimuli/${r.stimulus_id}`)
+          .then((s) => {
+            if (!cancelled) setStimulus(s);
+          })
+          .catch(() => {});
+      }
+
       const v = viewerRef.current;
       if (v) {
         v.setRunConfig(runId, ablation, tl.n_timesteps, API_BASE);
@@ -92,6 +102,18 @@ export default function Runs({ params }) {
         v.setParcelOverlay(parcelOverlay);
         v.setTimeIndex(timeIndex);
       }
+
+      const frame = await apiFetch(
+        `/runs/${runId}/frames/${timeIndex}?ablation=${encodeURIComponent(ablation)}`
+      );
+      if (cancelled) return;
+      setFrameRois(frame.roi_frame || []);
+
+      const eventPayload = await apiFetch(
+        `/runs/${runId}/events?ablation=${encodeURIComponent(ablation)}`
+      ).catch(() => ({ items: [] }));
+      if (cancelled) return;
+      setFrameEvents(eventPayload.items || []);
 
       const top = await apiFetch(
         `/analysis/top-rois?run_id=${encodeURIComponent(runId)}&ablation=${encodeURIComponent(ablation)}&limit=10`
@@ -128,14 +150,67 @@ export default function Runs({ params }) {
       method: "POST",
       body: JSON.stringify({ run_id: runId, ablation, roi_ids: [roiId] }),
     })
-      .then((d) => { if (!cancelled) setRoiTrace(d.traces?.[0]?.mean_trace ?? null); })
+      .then((d) => {
+        if (!cancelled) setRoiTrace(d.traces?.[0]?.mean_trace ?? null);
+      })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [runId, ablation, roiId, run?.status]);
 
-  useEffect(() => { viewerRef.current?.setThreshold(threshold); }, [threshold]);
-  useEffect(() => { viewerRef.current?.setHemisphere(hemisphere); }, [hemisphere]);
-  useEffect(() => { viewerRef.current?.setParcelOverlay(parcelOverlay); }, [parcelOverlay]);
+  useEffect(() => {
+    if (!runId || run?.status !== "succeeded") return;
+    let cancelled = false;
+    apiFetch(`/runs/${runId}/frames/${timeIndex}?ablation=${encodeURIComponent(ablation)}`)
+      .then((d) => {
+        if (!cancelled) setFrameRois(d.roi_frame || []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, ablation, timeIndex, run?.status]);
+
+  useEffect(() => {
+    viewerRef.current?.setThreshold(threshold);
+  }, [threshold]);
+
+  useEffect(() => {
+    viewerRef.current?.setHemisphere(hemisphere);
+  }, [hemisphere]);
+
+  useEffect(() => {
+    viewerRef.current?.setParcelOverlay(parcelOverlay);
+  }, [parcelOverlay]);
+
+  const activeNow = [...frameRois]
+    .filter((item) => item.value >= threshold)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+  const strongestActive = activeNow[0] ?? null;
+  const alignedEvent =
+    frameEvents.find((item) => timeIndex >= item.start_seconds && timeIndex < item.end_seconds) ||
+    frameEvents
+      .slice()
+      .sort((a, b) => Math.abs(a.start_seconds - timeIndex) - Math.abs(b.start_seconds - timeIndex))[0] ||
+    null;
+
+  const alignedEventLabel = (() => {
+    if (!alignedEvent) return "No aligned input segment available.";
+    const start = alignedEvent.start_seconds.toFixed(1);
+    const end = alignedEvent.end_seconds.toFixed(1);
+    if (alignedEvent.token) {
+      return `"${alignedEvent.token}"`;
+    }
+    if (alignedEvent.type.toLowerCase() === "video") {
+      return `Video segment at ${start}s-${end}s`;
+    }
+    if (alignedEvent.type.toLowerCase() === "audio") {
+      return `Audio segment at ${start}s-${end}s`;
+    }
+    return `${alignedEvent.type} event at ${start}s-${end}s`;
+  })();
 
   function handleRunChange(e) {
     const id = e.target.value;
@@ -164,14 +239,21 @@ export default function Runs({ params }) {
     }
   }
 
-  const availableAblations =
-    run?.ablations?.map((a) => a.ablation) || ALL_ABLATIONS;
+  const availableAblations = run?.ablations?.map((a) => a.ablation) || ALL_ABLATIONS;
 
-  // ── Empty state when no run is selected ───────────────────────────────────
   if (!runId) {
     return (
-      <div className="grid-shell-single">
-        <div className="panel">
+      <div className="page-stack">
+        <section className="page-intro">
+          <div>
+            <p className="eyebrow">Run workspace</p>
+            <h2 className="page-intro__title">Open a run to inspect cortical activity.</h2>
+            <p className="page-intro__desc">
+              Pick an existing run below or queue a new one from the Stimuli page.
+            </p>
+          </div>
+        </section>
+        <div className="panel grid-shell-single">
           <div className="empty-state">
             <p className="empty-state__title">No run selected</p>
             <p>Go to <a href="#/stimuli">Stimuli</a> to create a stimulus and queue a run, or pick one below.</p>
@@ -180,14 +262,13 @@ export default function Runs({ params }) {
                 style={{ maxWidth: 340, margin: "1rem auto 0", display: "block" }}
                 defaultValue=""
                 onChange={(e) => {
-                  if (e.target.value)
-                    location.hash = `#/runs?id=${encodeURIComponent(e.target.value)}`;
+                  if (e.target.value) location.hash = `#/runs?id=${encodeURIComponent(e.target.value)}`;
                 }}
               >
-                <option value="">— pick a run —</option>
+                <option value="">Pick a run</option>
                 {runs.map((r) => (
                   <option key={r.run_id} value={r.run_id}>
-                    {r.run_id} — {r.status}
+                    {r.run_id} - {r.status}
                   </option>
                 ))}
               </select>
@@ -199,186 +280,271 @@ export default function Runs({ params }) {
   }
 
   return (
-    <section className="workspace-shell">
-      {/* ── Left sidebar: controls ── */}
-      <aside className="panel">
-        {/* Run identity */}
-        <p className="eyebrow">Run</p>
-        <div style={{ display: "flex", alignItems: "center", gap: ".5rem", marginBottom: ".5rem" }}>
-          <h2 style={{ fontSize: "1rem", fontWeight: 700, wordBreak: "break-all" }}>
-            {run?.run_id ?? runId}
-          </h2>
-          {run && <StatusBadge status={run.status} />}
+    <section className="page-stack">
+      <section className="page-intro">
+        <div>
+          <p className="eyebrow">Run workspace</p>
+          <h2 className="page-intro__title">Inspect one run at a time.</h2>
+          <p className="page-intro__desc">
+            The viewer is the primary surface. Controls stay to the left and frame evidence stays to the right.
+          </p>
         </div>
-
-        {loading && (
-          <div className="loading-row">
-            <span className="spinner" />
-            {run?.status === "queued" || run?.status === "processing"
-              ? "Waiting for run to complete…"
-              : "Loading workspace…"}
-          </div>
-        )}
-
-        <p className="meta-copy" style={{ marginBottom: "1rem" }}>
-          Average unseen subject · cortical only · research use only
-        </p>
-
-        <hr className="section-divider" />
-
-        {/* Run & ablation selection */}
-        <div className="sidebar-section stack">
-          <label>
+        <div className="page-intro__meta">
+          <div>
             <span>Run</span>
-            <select value={runId} onChange={handleRunChange}>
-              {runs.map((r) => (
-                <option key={r.run_id} value={r.run_id}>
-                  {r.run_id} — {r.status}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Ablation</span>
-            <select value={ablation} onChange={(e) => setAblation(e.target.value)}>
-              {availableAblations.map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>ROI quick-pick</span>
-            <select value={roiId} onChange={(e) => setRoiId(e.target.value)}>
-              {roiMeta.map((r) => (
-                <option key={r.roi_id} value={r.roi_id}>{r.label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <hr className="section-divider" />
-
-        {/* Viewer settings */}
-        <div className="sidebar-section stack">
-          <label>
-            <span>Activation threshold — {threshold.toFixed(2)}</span>
-            <input
-              type="range" min={0} max={1} step={0.05} value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
-            />
-          </label>
-          <label>
-            <span>Time — frame {timeIndex} / {Math.max(0, nTimesteps - 1)}</span>
-            <input
-              type="range" min={0} max={Math.max(0, nTimesteps - 1)} step={1} value={timeIndex}
-              onChange={(e) => {
-                const t = Number(e.target.value);
-                setTimeIndex(t);
-                viewerRef.current?.setTimeIndex(t);
-              }}
-            />
-          </label>
-          <div className="toggle-row">
-            <label>
-              <input type="checkbox" checked={hemisphere === "right"}
-                onChange={(e) => setHemisphere(e.target.checked ? "right" : "both")} />
-              Right hemisphere only
-            </label>
-            <label>
-              <input type="checkbox" checked={parcelOverlay}
-                onChange={(e) => setParcelOverlay(e.target.checked)} />
-              Parcel overlay
-            </label>
+            <strong>{run?.run_id ?? runId}</strong>
+          </div>
+          <div>
+            <span>Status</span>
+            <strong>{run ? <StatusBadge status={run.status} /> : "Loading"}</strong>
+          </div>
+          <div>
+            <span>Top active ROI</span>
+            <strong>{strongestActive ? strongestActive.label : "None above threshold"}</strong>
           </div>
         </div>
-
-        <hr className="section-divider" />
-
-        <div className="sidebar-section">
-          <button type="button" onClick={handleExport} disabled={!runId || run?.status !== "succeeded"}>
-            Export bundle
-          </button>
-          <Feedback msg={feedback} />
-        </div>
-      </aside>
-
-      {/* ── Centre: viewer ── */}
-      <section className="panel viewer-panel">
-        <p className="eyebrow">Cortical viewer</p>
-        <h2>Predicted cortical activity</h2>
-        <p className="meta-copy viewer-note">
-          Drag to rotate · scroll to zoom ·{" "}
-          <a href="#/about" tabIndex={-1}>research use only</a>
-        </p>
-
-        <BrainCanvas ref={viewerRef} onTimeChange={(t) => setTimeIndex(t)} />
-
-        <div className="viewer-controls">
-          <button
-            className="btn-ghost"
-            type="button"
-            disabled={isPlaying}
-            onClick={() => { viewerRef.current?.play(); setIsPlaying(true); }}
-          >
-            ▶ Play
-          </button>
-          <button
-            className="btn-ghost"
-            type="button"
-            disabled={!isPlaying}
-            onClick={() => { viewerRef.current?.pause(); setIsPlaying(false); }}
-          >
-            ⏸ Pause
-          </button>
-          <button className="btn-icon" type="button" onClick={handleSnapshot}>
-            📷 Snapshot
-          </button>
-        </div>
-
-        <LineChart values={timeline?.global_signal} width={560} height={140} />
       </section>
 
-      {/* ── Right sidebar: ROI summaries ── */}
-      <aside className="panel">
-        <p className="eyebrow">ROI summaries</p>
-        <h2>Top responding ROIs</h2>
+      <section className="workspace-shell">
+        <aside className="panel">
+          <p className="panel-kicker">Controls</p>
+          {loading && (
+            <div className="loading-row" style={{ marginBottom: "1rem" }}>
+              <span className="spinner" />
+              {run?.status === "queued" || run?.status === "processing"
+                ? "Waiting for run to complete..."
+                : "Loading workspace..."}
+            </div>
+          )}
 
-        {loading && !topRois.length ? (
-          <div className="loading-row" style={{ marginTop: ".75rem" }}>
-            <span className="spinner" /> Loading…
+          <div className="stack">
+            <label>
+              <span>Run</span>
+              <select value={runId} onChange={handleRunChange}>
+                {runs.map((r) => (
+                  <option key={r.run_id} value={r.run_id}>
+                    {r.run_id} - {r.status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Ablation</span>
+              <select value={ablation} onChange={(e) => setAblation(e.target.value)}>
+                {availableAblations.map((a) => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>ROI quick-pick</span>
+              <select value={roiId} onChange={(e) => setRoiId(e.target.value)}>
+                {roiMeta.map((r) => (
+                  <option key={r.roi_id} value={r.roi_id}>{r.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Activation threshold - {threshold.toFixed(2)}</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={threshold}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              <span>Time - frame {timeIndex} / {Math.max(0, nTimesteps - 1)}</span>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(0, nTimesteps - 1)}
+                step={1}
+                value={timeIndex}
+                onChange={(e) => {
+                  const t = Number(e.target.value);
+                  setTimeIndex(t);
+                  viewerRef.current?.setTimeIndex(t);
+                }}
+              />
+            </label>
+            <div className="toggle-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={hemisphere === "right"}
+                  onChange={(e) => setHemisphere(e.target.checked ? "right" : "both")}
+                />
+                Right hemisphere only
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={parcelOverlay}
+                  onChange={(e) => setParcelOverlay(e.target.checked)}
+                />
+                Parcel overlay
+              </label>
+            </div>
+            <button type="button" onClick={handleExport} disabled={!runId || run?.status !== "succeeded"}>
+              Export bundle
+            </button>
           </div>
-        ) : topRois.length === 0 ? (
-          <p className="meta-copy" style={{ marginTop: ".5rem" }}>
-            No data yet. Waiting for run to succeed.
+          <Feedback msg={feedback} />
+        </aside>
+
+        <section className="panel viewer-panel">
+          <p className="panel-kicker">Viewer</p>
+          <h2>Predicted cortical activity</h2>
+          <p className="meta-copy viewer-note">
+            Drag to rotate · scroll to zoom · <a href="#/about" tabIndex={-1}>research use only</a>
           </p>
-        ) : (
-          <ol className="compact-list" style={{ marginTop: ".75rem" }}>
-            {topRois.map((item) => (
-              <li key={item.roi_id} style={{ marginBottom: ".35rem" }}>
-                <strong>{item.label}</strong>
-                <br />
-                <span className="meta-copy">
-                  peak {item.peak_response.toFixed(3)} at {item.peak_time_seconds}s
+
+          {stimulus && (
+            <div className="stimulus-caption">
+              <span className="eyebrow" style={{ marginRight: ".5rem" }}>Stimulus</span>
+              <strong>{stimulus.name}</strong>
+              {stimulus.transcript && (
+                <span className="meta-copy" style={{ marginLeft: ".5rem", fontStyle: "italic" }}>
+                  &ldquo;{stimulus.transcript.length > 120
+                    ? `${stimulus.transcript.slice(0, 120)}...`
+                    : stimulus.transcript}&rdquo;
                 </span>
-              </li>
-            ))}
-          </ol>
-        )}
+              )}
+            </div>
+          )}
 
-        {roiTrace && (
-          <div style={{ marginTop: "1.25rem" }}>
-            <p className="eyebrow">ROI trace</p>
-            <LineChart values={roiTrace} width={280} height={140} />
+          <BrainCanvas
+            ref={viewerRef}
+            onTimeChange={(t) => setTimeIndex(t)}
+            frameRois={frameRois}
+            threshold={threshold}
+            timeIndex={timeIndex}
+          />
+
+          <div className="color-legend" aria-label="Activation color scale">
+            <div className="color-legend__bar" />
+            <div className="color-legend__labels">
+              <span>suppression</span>
+              <span>0</span>
+              <span>activation</span>
+            </div>
           </div>
-        )}
 
-        <hr className="section-divider" />
-        <p className="eyebrow">Caveats</p>
-        <p className="meta-copy">
-          Predicted hemodynamic (BOLD-like) responses for an average subject. Not real-time
-          neural firing.
-        </p>
-      </aside>
+          <div className="insight-card" style={{ marginBottom: "1rem" }}>
+            <p className="insight-card__label">Input aligned to this frame</p>
+            <p className="insight-card__title">{alignedEventLabel}</p>
+            {alignedEvent && (
+              <p className="insight-card__desc">
+                {alignedEvent.type} · {alignedEvent.start_seconds.toFixed(1)}s to {alignedEvent.end_seconds.toFixed(1)}s
+              </p>
+            )}
+          </div>
+
+          <div className="viewer-controls">
+            <button
+              className="btn-ghost"
+              type="button"
+              disabled={isPlaying}
+              onClick={() => {
+                viewerRef.current?.play();
+                setIsPlaying(true);
+              }}
+            >
+              Play
+            </button>
+            <button
+              className="btn-ghost"
+              type="button"
+              disabled={!isPlaying}
+              onClick={() => {
+                viewerRef.current?.pause();
+                setIsPlaying(false);
+              }}
+            >
+              Pause
+            </button>
+            <button className="btn-icon" type="button" onClick={handleSnapshot}>
+              Snapshot
+            </button>
+          </div>
+
+          <LineChart values={timeline?.global_signal} width={560} height={140} />
+        </section>
+
+        <aside className="panel">
+          <p className="panel-kicker">Current frame</p>
+          <h2>ROI evidence</h2>
+
+          <div className="meta-stack" style={{ marginBottom: "1rem" }}>
+            <div className="meta-row">
+              <span>Aligned input</span>
+              <strong>{alignedEventLabel}</strong>
+            </div>
+            {alignedEvent && (
+              <div className="meta-row">
+                <span>Time window</span>
+                <strong>{alignedEvent.start_seconds.toFixed(1)}s - {alignedEvent.end_seconds.toFixed(1)}s</strong>
+              </div>
+            )}
+          </div>
+
+          {loading && !frameRois.length ? (
+            <div className="loading-row" style={{ marginTop: ".75rem" }}>
+              <span className="spinner" /> Loading frame activity...
+            </div>
+          ) : activeNow.length === 0 ? (
+            <p className="meta-copy" style={{ marginTop: ".5rem" }}>
+              No ROIs exceed the current threshold of {threshold.toFixed(2)} at frame {timeIndex}.
+            </p>
+          ) : (
+            <ol className="compact-list" style={{ marginTop: ".75rem" }}>
+              {activeNow.map((item) => (
+                <li key={item.roi_id} style={{ marginBottom: ".35rem" }}>
+                  <strong>{item.label}</strong>
+                  <br />
+                  <span className="meta-copy">
+                    {item.group} · activation {item.value.toFixed(3)}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+
+          <hr className="section-divider" />
+          <p className="panel-kicker">Top ROIs</p>
+          {loading && !topRois.length ? (
+            <div className="loading-row" style={{ marginTop: ".75rem" }}>
+              <span className="spinner" /> Loading...
+            </div>
+          ) : topRois.length === 0 ? (
+            <p className="meta-copy" style={{ marginTop: ".5rem" }}>
+              No data yet. Waiting for run to succeed.
+            </p>
+          ) : (
+            <ol className="compact-list" style={{ marginTop: ".75rem" }}>
+              {topRois.map((item) => (
+                <li key={item.roi_id} style={{ marginBottom: ".35rem" }}>
+                  <strong>{item.label}</strong>
+                  <br />
+                  <span className="meta-copy">
+                    peak {item.peak_response.toFixed(3)} at {item.peak_time_seconds}s
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+
+          {roiTrace && (
+            <div style={{ marginTop: "1.25rem" }}>
+              <p className="panel-kicker">ROI trace</p>
+              <LineChart values={roiTrace} width={280} height={140} />
+            </div>
+          )}
+        </aside>
+      </section>
     </section>
   );
 }

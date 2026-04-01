@@ -3,8 +3,9 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  // static/ holds vendor and legacy JS assets so they don't conflict with
-  // the root index.html that Vite processes for the React entry point.
+  // Vite publishes files from static/ as /assets/* in the built bundle.
+  // Keep legacy viewer/vendor assets here so Docker/Nginx serves the same files
+  // that local Vite builds use.
   publicDir: "static",
   build: {
     outDir: "dist",

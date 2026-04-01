@@ -1,13 +1,12 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
+import StatusBadge from "../components/StatusBadge";
 
-function PipelineStep({ num, title, stat, href, linkLabel, done }) {
+function StageChip({ title, value, href, active }) {
   return (
-    <a href={href} className={`pipeline__step ${done ? "pipeline__step--done" : ""}`}>
-      <span className="pipeline__num">{done ? "✓" : num}</span>
-      <p className="pipeline__title">{title}</p>
-      <p className="pipeline__stat">{stat}</p>
-      <span className="pipeline__link">{linkLabel} →</span>
+    <a href={href} className={`stage-chip ${active ? "stage-chip--active" : ""}`}>
+      <span className="stage-chip__title">{title}</span>
+      <span className="stage-chip__value">{value}</span>
     </a>
   );
 }
@@ -33,125 +32,147 @@ export default function Home() {
 
   const readyStimuli = stimuli.filter((s) => s.status === "ready");
   const succeededRuns = runs.filter((r) => r.status === "succeeded");
+  const processingRuns = runs.filter((r) => r.status === "processing" || r.status === "queued");
   const latestRun = runs[0] ?? null;
+  const latestExport = exports[0] ?? null;
 
   let nextStep = null;
   if (!loading) {
     if (readyStimuli.length === 0) {
       nextStep = {
-        label: "Step 1 — Get started",
+        label: "Next action",
         title: "Create your first stimulus",
-        desc: "Paste a sentence, upload an audio file, or upload a video. This is the input the model will process.",
+        desc: "Start with text or upload media. The rest of the workflow stays locked until at least one stimulus is ready.",
         href: "#/stimuli",
-        cta: "Create stimulus",
+        cta: "Open Stimuli",
       };
-    } else if (succeededRuns.length === 0 && runs.length === 0) {
+    } else if (runs.length === 0) {
       nextStep = {
-        label: "Step 2 — Queue a run",
-        title: "Queue a cortical prediction run",
-        desc: `You have ${readyStimuli.length} ready stimulus${readyStimuli.length > 1 ? "i" : ""}. Select one and queue a run to predict cortical activity.`,
+        label: "Next action",
+        title: "Queue the first prediction run",
+        desc: `${readyStimuli.length} stimulus${readyStimuli.length === 1 ? "" : "es"} are ready. Launch a run to generate the first cortical timeline.`,
         href: "#/stimuli",
         cta: "Queue a run",
       };
     } else if (succeededRuns.length === 0) {
       nextStep = {
-        label: "Step 2 — Waiting",
-        title: "Run is processing",
+        label: "Current status",
+        title: "Wait for the active run to finish",
         desc: latestRun
-          ? `Run ${latestRun.run_id} is currently ${latestRun.status}. The page will update automatically when it completes.`
-          : "Check the Runs page for current status.",
-        href: latestRun
-          ? `#/runs?id=${encodeURIComponent(latestRun.run_id)}`
-          : "#/runs",
-        cta: "View run status",
+          ? `${latestRun.run_id} is ${latestRun.status}. Open the run workspace to monitor progress.`
+          : "Open the Runs page to track active jobs.",
+        href: latestRun ? `#/runs?id=${encodeURIComponent(latestRun.run_id)}` : "#/runs",
+        cta: "Open Runs",
       };
     } else if (succeededRuns.length < 2) {
       nextStep = {
-        label: "Step 3 — Explore results",
-        title: "Inspect cortical activation",
-        desc: "Your run succeeded. Open the 3-D cortical viewer to explore which brain regions responded, at which time.",
+        label: "Next action",
+        title: "Inspect the latest successful run",
+        desc: "Open the viewer, scrub through frames, and inspect which ROIs activate over time.",
         href: `#/runs?id=${encodeURIComponent(succeededRuns[0].run_id)}`,
         cta: "Open viewer",
       };
     } else {
       nextStep = {
-        label: "Step 4 — Analysis",
+        label: "Next action",
         title: "Compare runs or export a bundle",
-        desc: `You have ${succeededRuns.length} succeeded runs. Contrast two runs by ablation, or download a data bundle for offline analysis.`,
+        desc: `You already have ${succeededRuns.length} successful runs. Move into analysis or package a bundle for offline review.`,
         href: "#/compare",
         cta: "Compare runs",
       };
     }
   }
 
-  const loadingText = loading ? "Loading…" : null;
-
   return (
-    <>
-      <div className="pipeline">
-        <PipelineStep
-          num={1}
-          title="Create stimulus"
-          stat={loadingText ?? (readyStimuli.length > 0 ? `${readyStimuli.length} ready` : "No stimuli yet")}
-          href="#/stimuli"
-          linkLabel="Go to Stimuli"
-          done={readyStimuli.length > 0}
-        />
-        <PipelineStep
-          num={2}
-          title="Queue a run"
-          stat={loadingText ?? (runs.length > 0 ? `${runs.length} run${runs.length > 1 ? "s" : ""} · ${succeededRuns.length} succeeded` : "No runs yet")}
-          href="#/stimuli"
-          linkLabel="Queue a run"
-          done={succeededRuns.length > 0}
-        />
-        <PipelineStep
-          num={3}
-          title="Inspect results"
-          stat={loadingText ?? (succeededRuns.length > 0 ? `${succeededRuns.length} run${succeededRuns.length > 1 ? "s" : ""} ready` : "Waiting for a run to succeed")}
-          href="#/runs"
-          linkLabel="View runs"
-          done={succeededRuns.length > 0}
-        />
-        <PipelineStep
-          num={4}
-          title="Compare & export"
-          stat={loadingText ?? (exports.length > 0 ? `${exports.length} export${exports.length > 1 ? "s" : ""}` : "No exports yet")}
-          href="#/compare"
-          linkLabel="Compare runs"
-          done={exports.length > 0}
-        />
-      </div>
-
-      {!loading && nextStep && (
-        <div className="next-step-cta">
-          <div>
-            <p className="next-step-cta__label">{nextStep.label}</p>
-            <p className="next-step-cta__title">{nextStep.title}</p>
-            <p className="next-step-cta__desc">{nextStep.desc}</p>
-          </div>
-          <a href={nextStep.href} className="btn-primary-cta">{nextStep.cta} →</a>
-        </div>
-      )}
-
-      <div className="grid-shell">
-        <div className="panel">
-          <p className="eyebrow">About</p>
-          <h2>virtual-subject</h2>
-          <p className="meta-copy" style={{ marginTop: ".5rem" }}>
-            Predicts hemodynamic (BOLD-like) cortical responses for an average subject
-            from any text, audio, or video stimulus. Not real-time neural firing — research use only.
+    <section className="page-stack">
+      <section className="panel home-hero">
+        <div className="home-hero__main">
+          <p className="eyebrow">{nextStep?.label ?? "Home"}</p>
+          <h2 className="home-hero__title">{nextStep?.title ?? "Loading workspace..."}</h2>
+          <p className="home-hero__desc">
+            {nextStep?.desc ?? "Gathering current pipeline state."}
           </p>
+
+          <div className="home-hero__actions">
+            {nextStep && (
+              <a href={nextStep.href} className="btn-primary-cta">
+                {nextStep.cta}
+              </a>
+            )}
+            <div className="home-hero__stats">
+              <div>
+                <span>Ready stimuli</span>
+                <strong>{loading ? "..." : readyStimuli.length}</strong>
+              </div>
+              <div>
+                <span>Active runs</span>
+                <strong>{loading ? "..." : processingRuns.length}</strong>
+              </div>
+              <div>
+                <span>Successful runs</span>
+                <strong>{loading ? "..." : succeededRuns.length}</strong>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="panel">
-          <p className="eyebrow">Caveats</p>
-          <ul className="compact-list meta-copy">
-            <li>Average subject — not individual predictions.</li>
-            <li>Predicted BOLD-like responses, not neuronal firing.</li>
-            <li>Research use only — not for clinical decisions.</li>
-          </ul>
+      </section>
+
+      <section className="stage-strip">
+        <StageChip
+          title="Stimuli"
+          value={loading ? "Loading..." : readyStimuli.length > 0 ? `${readyStimuli.length} ready` : "Not started"}
+          href="#/stimuli"
+          active={readyStimuli.length === 0}
+        />
+        <StageChip
+          title="Runs"
+          value={loading ? "Loading..." : runs.length > 0 ? `${runs.length} total` : "Not started"}
+          href="#/runs"
+          active={readyStimuli.length > 0 && runs.length === 0}
+        />
+        <StageChip
+          title="Review"
+          value={loading ? "Loading..." : succeededRuns.length > 0 ? `${succeededRuns.length} ready` : "Waiting"}
+          href="#/runs"
+          active={runs.length > 0 && succeededRuns.length === 0}
+        />
+        <StageChip
+          title="Export"
+          value={loading ? "Loading..." : exports.length > 0 ? `${exports.length} bundles` : "Optional"}
+          href="#/exports"
+          active={succeededRuns.length > 1}
+        />
+      </section>
+
+      <section className="panel home-support">
+        <div className="home-support__item">
+          <span className="home-support__label">Latest run</span>
+          <strong className="home-support__value">
+            {latestRun ? latestRun.run_id : "No run queued"}
+          </strong>
+          <div className="home-support__meta">
+            {latestRun ? <StatusBadge status={latestRun.status} /> : <span className="meta-copy">Idle</span>}
+          </div>
         </div>
-      </div>
-    </>
+
+        <div className="home-support__item">
+          <span className="home-support__label">Latest export</span>
+          <strong className="home-support__value">
+            {latestExport ? latestExport.export_id : "No bundle yet"}
+          </strong>
+          <div className="home-support__meta">
+            <a href="#/exports">Open exports</a>
+          </div>
+        </div>
+
+        <div className="home-support__item">
+          <span className="home-support__label">Scope</span>
+          <strong className="home-support__value">Average-subject, research-only prediction</strong>
+          <div className="home-support__meta">
+            <a href="#/about">Read caveats</a>
+          </div>
+        </div>
+      </section>
+    </section>
   );
 }

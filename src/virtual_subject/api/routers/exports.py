@@ -68,3 +68,12 @@ def download_export(export_id: str, service: AppService = Depends(get_service)) 
     filename = export.bundle_key.split("/")[-1]
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return Response(content=content, media_type=content_type, headers=headers)
+
+
+@router.delete("/{export_id}")
+def delete_export(export_id: str, service: AppService = Depends(get_service)) -> dict:
+    try:
+        service.delete_export(export_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True}

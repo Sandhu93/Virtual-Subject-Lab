@@ -9,6 +9,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY alembic ./alembic
+COPY packages ./packages
 
 RUN pip install --upgrade pip && pip install .
 

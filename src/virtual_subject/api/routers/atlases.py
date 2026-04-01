@@ -12,7 +12,7 @@ router = APIRouter(prefix="/atlases", tags=["atlases"])
 
 # Resolve packages/atlas-assets from the repo root.  Works whether the app
 # is run from the repo root or from inside the src/ package directory.
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 _ATLAS_ASSETS = _REPO_ROOT / "packages" / "atlas-assets"
 
 

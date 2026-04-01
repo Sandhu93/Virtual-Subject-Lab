@@ -15,6 +15,12 @@ export default function LineChart({ values, width = 520, height = 160 }) {
   return (
     <div className="chart-box">
       <svg viewBox={`0 0 ${width} ${height}`} className="spark-svg" role="img" aria-label="Trace chart">
+        <defs>
+          <linearGradient id="chart-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#00ffcc" />
+            <stop offset="100%" stopColor="#3ef082" />
+          </linearGradient>
+        </defs>
         <rect x="0" y="0" width={width} height={height} rx="12" />
         <polyline points={points} />
       </svg>

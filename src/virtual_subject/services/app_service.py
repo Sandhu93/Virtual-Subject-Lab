@@ -160,6 +160,37 @@ class AppService:
         self.db.commit()
         return stimulus
 
+    def delete_stimulus(self, stimulus_id: str) -> None:
+        stimulus = self.get_stimulus(stimulus_id)
+        existing_run = self.db.scalar(select(Run).where(Run.stimulus_id == stimulus_id).limit(1))
+        if existing_run is not None:
+            raise ValueError("Cannot delete a stimulus that already has runs.")
+
+        storage_keys: set[str] = set()
+        if stimulus.storage_key:
+            storage_keys.add(stimulus.storage_key)
+
+        metadata = self.db.get(StimulusMetadata, stimulus_id)
+        if metadata is not None:
+            for key in (metadata.transcript_key, metadata.preview_key, metadata.events_key):
+                if key:
+                    storage_keys.add(key)
+            self.db.delete(metadata)
+
+        artifacts = list(
+            self.db.scalars(select(Artifact).where(Artifact.owner_type == "stimulus", Artifact.owner_id == stimulus_id))
+        )
+        for artifact in artifacts:
+            storage_keys.add(artifact.storage_key)
+            self.db.delete(artifact)
+
+        for key in storage_keys:
+            self.storage.delete(key)
+
+        self.db.execute(delete(AuditLog).where(AuditLog.target_type == "stimulus", AuditLog.target_id == stimulus_id))
+        self.db.delete(stimulus)
+        self.db.commit()
+
     def _resolve_ablations(self, stimulus: Stimulus, requested: list[str] | None) -> list[str]:
         requested = requested or ["full"]
         available = set(stimulus.modalities)
@@ -264,6 +295,99 @@ class AppService:
         query = select(RunAblation).where(RunAblation.run_id == run_id).order_by(RunAblation.ablation)
         return list(self.db.scalars(query))
 
+    @staticmethod
+    def _coerce_float(value) -> float | None:
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _normalize_event_row(self, row: dict, index: int) -> dict:
+        start_seconds = None
+        end_seconds = None
+
+        for key in (
+            "start_seconds",
+            "start_time_seconds",
+            "onset_seconds",
+            "onset",
+            "start",
+            "time_seconds",
+            "time",
+            "timestamp_seconds",
+        ):
+            start_seconds = self._coerce_float(row.get(key))
+            if start_seconds is not None:
+                break
+
+        for key in (
+            "end_seconds",
+            "end_time_seconds",
+            "offset_seconds",
+            "offset",
+            "end",
+            "stop_seconds",
+            "stop",
+        ):
+            end_seconds = self._coerce_float(row.get(key))
+            if end_seconds is not None:
+                break
+
+        if start_seconds is None:
+            start_seconds = float(index)
+        if end_seconds is None:
+            end_seconds = start_seconds + 1.0
+
+        event_type = str(
+            row.get("type")
+            or row.get("event_type")
+            or row.get("modality")
+            or row.get("source_type")
+            or "event"
+        )
+        token = (
+            row.get("token")
+            or row.get("word")
+            or row.get("text")
+            or row.get("label")
+            or row.get("segment")
+            or row.get("content")
+        )
+
+        return {
+            "event_index": index,
+            "start_seconds": float(start_seconds),
+            "end_seconds": float(end_seconds),
+            "type": event_type,
+            "token": str(token) if token not in (None, "") else None,
+            "raw": row,
+        }
+
+    def get_run_events(self, run_id: str, ablation: str = "full") -> dict:
+        run = self.get_run(run_id)
+        stimulus = self.get_stimulus(run.stimulus_id)
+        metadata = self._upsert_stimulus_metadata(stimulus.id)
+        if not metadata.events_key:
+            raise KeyError("Timed input events are not available yet")
+
+        rows = self.storage.get_json(metadata.events_key)
+        normalized = [self._normalize_event_row(dict(row), index) for index, row in enumerate(rows)]
+
+        if ablation != "full":
+          wanted = {name.title() for name in ABLATION_MODALITIES[ablation]}
+          filtered = [item for item in normalized if item["type"] in wanted]
+          if filtered:
+              normalized = filtered
+
+        return {
+            "run_id": run_id,
+            "stimulus_id": stimulus.id,
+            "ablation": ablation,
+            "items": normalized,
+        }
+
     def claim_next_job(self) -> Job | None:
         job = self.db.scalar(select(Job).where(Job.status == "queued").order_by(Job.created_at.asc()).limit(1))
         if job is None:
@@ -333,23 +457,82 @@ class AppService:
             )
         )
 
-    def _build_preview_png(self, frame: list[dict], title: str) -> bytes:
-        image = Image.new("RGB", (720, 420), color=(248, 244, 236))
-        draw = ImageDraw.Draw(image)
-        draw.ellipse((40, 50, 320, 360), outline=(70, 88, 73), width=2)
-        draw.ellipse((400, 50, 680, 360), outline=(70, 88, 73), width=2)
-        draw.text((40, 18), title, fill=(31, 38, 32))
+    @staticmethod
+    def _activation_color(value: float) -> tuple[int, int, int]:
+        """Map a signed activation value to an RGB color.
 
-        for roi in frame:
-            base_color = 180 + int(max(-1.0, min(1.0, roi["value"])) * 50)
-            color = (max(100, base_color), 110, 90)
-            radius = 18
+        Negative (suppression): blue → grey.  Positive (activation): grey → red/orange.
+        """
+        t = max(-1.0, min(1.0, value))
+        if t >= 0:
+            # grey (180,180,180) → orange-red (220,80,40)
+            r = int(180 + t * 40)
+            g = int(180 - t * 100)
+            b = int(180 - t * 140)
+        else:
+            # grey (180,180,180) → blue (80,130,210)
+            r = int(180 + t * 100)
+            g = int(180 + t * 50)
+            b = int(180 - t * 30)
+        return (max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b)))
+
+    def _build_preview_png(self, frame: list[dict], title: str) -> bytes:
+        W, H = 760, 480
+        image = Image.new("RGB", (W, H), color=(248, 244, 236))
+        draw = ImageDraw.Draw(image)
+
+        # Brain outlines — left and right hemispheres
+        L_X1, L_X2, R_X1, R_X2 = 30, 340, 360, 670
+        Y1, Y2 = 60, 390
+        draw.ellipse((L_X1, Y1, L_X2, Y2), outline=(70, 88, 73), width=2)
+        draw.ellipse((R_X1, Y1, R_X2, Y2), outline=(70, 88, 73), width=2)
+
+        # Hemisphere labels
+        draw.text((L_X1 + 4, Y1 + 4), "LEFT", fill=(90, 100, 88))
+        draw.text((R_X1 + 4, Y1 + 4), "RIGHT", fill=(90, 100, 88))
+
+        # Title
+        draw.text((30, 20), title, fill=(31, 38, 32))
+
+        # Sort ROIs so high-activation ones draw on top
+        sorted_frame = sorted(frame, key=lambda r: r["value"])
+
+        for roi in sorted_frame:
+            v = roi["value"]
+            color = self._activation_color(v)
+            radius = max(10, min(22, 12 + int(abs(v) * 14)))
+
             if roi["hemisphere"] == "left":
-                cx = int(40 + roi["x"] * 280)
+                cx = int(L_X1 + roi["x"] * (L_X2 - L_X1))
             else:
-                cx = int(400 + (roi["x"] - 0.5) * 280)
-            cy = int(40 + (1.0 - roi["y"]) * 300)
-            draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=color)
+                cx = int(R_X1 + (roi["x"] - 0.5) * (R_X2 - R_X1) * 2)
+            cy = int(Y1 + (1.0 - roi["y"]) * (Y2 - Y1))
+
+            draw.ellipse(
+                (cx - radius, cy - radius, cx + radius, cy + radius),
+                fill=color,
+                outline=(50, 50, 50),
+                width=1,
+            )
+
+            # Label for strong activations
+            if abs(v) >= 0.3:
+                label = roi.get("label", roi.get("roi_id", ""))
+                if label:
+                    draw.text((cx - radius, cy + radius + 2), label[:12], fill=(31, 38, 32))
+
+        # Color scale legend (bottom strip)
+        legend_x0, legend_y0 = 30, H - 36
+        legend_w = 200
+        for i in range(legend_w):
+            t = (i / (legend_w - 1)) * 2 - 1  # -1 to +1
+            c = self._activation_color(t)
+            draw.line([(legend_x0 + i, legend_y0), (legend_x0 + i, legend_y0 + 16)], fill=c)
+        draw.rectangle(
+            [legend_x0 - 1, legend_y0 - 1, legend_x0 + legend_w, legend_y0 + 17],
+            outline=(100, 100, 100),
+        )
+        draw.text((legend_x0, legend_y0 + 18), "suppression ← 0 → activation", fill=(80, 80, 80))
 
         buffer = io.BytesIO()
         image.save(buffer, format="PNG")
@@ -702,6 +885,30 @@ class AppService:
 
     def list_exports(self) -> list[Export]:
         return list(self.db.scalars(select(Export).order_by(Export.created_at.desc())))
+
+    def delete_export(self, export_id: str) -> None:
+        export = self.get_export(export_id)
+
+        storage_keys: set[str] = set()
+        for key in (export.bundle_key, export.manifest_key):
+            if key:
+                storage_keys.add(key)
+
+        artifacts = list(
+            self.db.scalars(select(Artifact).where(Artifact.owner_type == "export", Artifact.owner_id == export_id))
+        )
+        for artifact in artifacts:
+            storage_keys.add(artifact.storage_key)
+            self.db.delete(artifact)
+
+        self.db.execute(delete(Job).where(Job.kind == "export_bundle", Job.owner_id == export_id))
+        self.db.execute(delete(AuditLog).where(AuditLog.target_type == "export", AuditLog.target_id == export_id))
+
+        for key in storage_keys:
+            self.storage.delete(key)
+
+        self.db.delete(export)
+        self.db.commit()
 
     def process_export_job(self, export_id: str) -> None:
         export = self.db.get(Export, export_id)

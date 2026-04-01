@@ -25,6 +25,10 @@ class StorageAdapter(ABC):
     def stat(self, key: str) -> dict[str, Any]:
         raise NotImplementedError
 
+    @abstractmethod
+    def delete(self, key: str) -> None:
+        raise NotImplementedError
+
     def put_text(self, key: str, text: str, content_type: str = "text/plain; charset=utf-8") -> None:
         self.put_bytes(key, text.encode("utf-8"), content_type)
 
@@ -84,6 +88,9 @@ class MinioStorageAdapter(StorageAdapter):
             "content_type": info.content_type,
         }
 
+    def delete(self, key: str) -> None:
+        self.client.remove_object(self.bucket, key)
+
 
 class FileStorageAdapter(StorageAdapter):
     def __init__(self, base_path: str | Path = "storage") -> None:
@@ -110,10 +117,14 @@ class FileStorageAdapter(StorageAdapter):
             "content_type": "",
         }
 
+    def delete(self, key: str) -> None:
+        path = self._path(key)
+        if path.exists():
+            path.unlink()
+
 
 def get_storage() -> StorageAdapter:
     settings = get_settings()
     if settings.storage_backend == "filesystem":
         return FileStorageAdapter()
     return MinioStorageAdapter()
-

@@ -92,12 +92,14 @@
   }
 
   function mat4Multiply(out, a, b) {
+    const tmp = new Float32Array(16);
     for (let i = 0; i < 4; i++) {
       for (let j = 0; j < 4; j++) {
-        out[j * 4 + i] = 0;
-        for (let k = 0; k < 4; k++) out[j * 4 + i] += a[k * 4 + i] * b[j * 4 + k];
+        tmp[j * 4 + i] = 0;
+        for (let k = 0; k < 4; k++) tmp[j * 4 + i] += a[k * 4 + i] * b[j * 4 + k];
       }
     }
+    out.set(tmp);
     return out;
   }
 
@@ -215,7 +217,7 @@
       posFlat[i*3+1] = verts[i][1];
       posFlat[i*3+2] = verts[i][2];
     }
-    const faceFlat = new Uint32Array(faces.length * 3);
+    const faceFlat = new Uint16Array(faces.length * 3);
     for (let i = 0; i < faces.length; i++) {
       faceFlat[i*3] = faces[i][0];
       faceFlat[i*3+1] = faces[i][1];
@@ -262,10 +264,11 @@
     return new Float32Array(await resp.arrayBuffer());
   }
 
-  async function fetchU32(url) {
+  async function fetchU16(url) {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status} ${url}`);
-    return new Uint32Array(await resp.arrayBuffer());
+    const raw = new Uint32Array(await resp.arrayBuffer());
+    return new Uint16Array(raw);
   }
 
   // ── Hemisphere object ────────────────────────────────────────────────────────
@@ -329,7 +332,7 @@
     gl.vertexAttribPointer(aVal, 1, gl.FLOAT, false, 0, 0);
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.faceBuf);
-    gl.drawElements(gl.TRIANGLES, this.nFaces, gl.UNSIGNED_INT, 0);
+    gl.drawElements(gl.TRIANGLES, this.nFaces, gl.UNSIGNED_SHORT, 0);
   };
 
   // ── main viewer factory ──────────────────────────────────────────────────────
@@ -341,10 +344,12 @@
       return null;
     }
 
-    // Enable 32-bit index extension for large meshes
-    gl.getExtension('OES_element_index_uint');
     gl.enable(gl.DEPTH_TEST);
     gl.clearColor(0.0, 0.0, 0.0, 0.0);
+    const emitStatus = (state, message) => {
+      canvas.dispatchEvent(new CustomEvent('viewer-status', { detail: { state, message } }));
+    };
+    emitStatus('initializing', 'Initializing brain viewer...');
 
     const prog = linkProgram(gl,
       compileShader(gl, gl.VERTEX_SHADER,   VERT_SRC),
@@ -431,6 +436,7 @@
     }
 
     async function loadMesh() {
+      emitStatus('mesh-loading', 'Loading cortical mesh...');
       try {
         // Try real atlas assets first
         const metaResp = await fetch(`${apiBase}/atlases/fsaverage5/metadata`);
@@ -440,21 +446,23 @@
         const [lPos, lNorm, lFaces, rPos, rNorm, rFaces] = await Promise.all([
           fetchF32(`${base}/left/left_mesh.bin`),
           fetchF32(`${base}/left/vertex_normals_left.bin`),
-          fetchU32(`${base}/left/faces_left.bin`),
+          fetchU16(`${base}/left/faces_left.bin`),
           fetchF32(`${base}/right/right_mesh.bin`),
           fetchF32(`${base}/right/vertex_normals_right.bin`),
-          fetchU32(`${base}/right/faces_right.bin`),
+          fetchU16(`${base}/right/faces_right.bin`),
         ]);
         const nV = lPos.length / 3;
         leftHemi  = new Hemisphere(gl, prog, lPos, lNorm, lFaces, 0, nV);
         rightHemi = new Hemisphere(gl, prog, rPos, rNorm, rFaces, 0, nV);
         console.log('[BrainViewer] Loaded real fsaverage5 mesh (' + nV + ' verts/hemi)');
+        emitStatus('mesh-ready', 'Cortical mesh loaded.');
       } catch (_err) {
         // Fallback: generate icosphere
         console.warn('[BrainViewer] Atlas mesh not available — using icosphere approximation');
         const { positions, normals, faces, nVerts } = generateIcosphere(5);
         leftHemi  = new Hemisphere(gl, prog, positions, normals, faces, -1.6, nVerts);
         rightHemi = new Hemisphere(gl, prog, positions, normals, faces,  1.6, nVerts);
+        emitStatus('mesh-ready', 'Using fallback cortical mesh.');
       }
       meshReady = true;
       render();
@@ -489,6 +497,7 @@
       setTimeIndex(t) {
         timeIndex = t;
         if (!runId) return;
+        emitStatus('frame-loading', `Loading frame ${t + 1}...`);
         fetch(`${apiBase}/runs/${runId}/frames/${t}/vertices?ablation=${encodeURIComponent(ablation)}`)
           .then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status))
           .then(buf => {
@@ -497,9 +506,13 @@
             const nV = leftHemi ? leftHemi.nVerts : arr.length / 2;
             if (leftHemi && rightHemi && meshReady) {
               viewer.setVertexData(arr, nV);
+              emitStatus('ready', `Showing frame ${t + 1}.`);
             }
           })
-          .catch(e => console.warn('[BrainViewer] vertex fetch failed', e));
+          .catch(e => {
+            console.warn('[BrainViewer] vertex fetch failed', e);
+            emitStatus('error', `Failed to load cortical frame ${t}.`);
+          });
       },
 
       play() {
@@ -521,6 +534,10 @@
       snapshot() {
         render();
         return canvas.toDataURL('image/png');
+      },
+
+      resize() {
+        render();
       },
 
       destroy() {

@@ -104,3 +104,13 @@ def get_stimulus(stimulus_id: str, service: AppService = Depends(get_service)) -
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+
+@router.delete("/{stimulus_id}")
+def delete_stimulus(stimulus_id: str, service: AppService = Depends(get_service)) -> dict:
+    try:
+        service.delete_stimulus(stimulus_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"ok": True}

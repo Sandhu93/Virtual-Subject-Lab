@@ -1,5 +1,9 @@
 # virtual-subject
 
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC--BY--NC--4.0-lightgrey.svg)](LICENSE)
+
+Non-commercial use only. This repository is shared for personal, research, and other non-commercial purposes.
+
 `virtual-subject` is a research-facing web application built around TRIBE v2. It turns raw model inference into something inspectable: a workflow where you can submit a stimulus, run prediction, scrub through time, inspect ROI evidence, compare runs, and export reproducible artifacts.
 
 The current local setup works best for text-first exploration. Audio and video support are part of the architecture, but heavier real-mode workloads are better suited to a stronger GPU environment.

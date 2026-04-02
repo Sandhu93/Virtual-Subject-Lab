@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from virtual_subject.adapters.tribe import MockTribeAdapter, get_tribe_adapter
+from virtual_subject.adapters.tribe import MockTribeAdapter, RealTribeAdapter, get_tribe_adapter
 from virtual_subject.domain.constants import DEFAULT_VERTEX_COUNT
 
 
@@ -67,3 +67,19 @@ def test_mock_predict_minimum_duration():
     s = _stimulus(duration=2.0)
     events = adapter.build_events_dataframe(s)
     assert len(events) >= 4
+
+
+def test_real_text_transcript_sidecar_uses_text_tokens(tmp_path):
+    audio_path = tmp_path / "stimulus.mp3"
+    audio_path.write_bytes(b"")
+
+    transcript_path = RealTribeAdapter._write_text_transcript_sidecar(
+        audio_path,
+        "Hello world. Let's test this path.",
+    )
+
+    df = pd.read_csv(transcript_path, sep="\t")
+    assert transcript_path.exists()
+    assert df["text"].tolist() == ["Hello", "world", "Let's", "test", "this", "path"]
+    assert df["start"].is_monotonic_increasing
+    assert (df["duration"] > 0).all()

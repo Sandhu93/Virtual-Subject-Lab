@@ -12,15 +12,26 @@ export async function apiFetch(path, options = {}) {
     },
     ...options,
   });
+  const ct = res.headers.get("content-type") ?? "";
+  const raw = await res.text();
   if (!res.ok) {
     let detail = res.statusText;
-    try {
-      detail = (await res.json()).detail ?? detail;
-    } catch {
-      detail = await res.text();
+    if (raw) {
+      if (ct.includes("application/json")) {
+        try {
+          const payload = JSON.parse(raw);
+          detail = payload?.detail ?? payload?.message ?? raw;
+        } catch {
+          detail = raw;
+        }
+      } else {
+        detail = raw;
+      }
     }
     throw new Error(detail);
   }
-  const ct = res.headers.get("content-type") ?? "";
-  return ct.includes("application/json") ? res.json() : res.text();
+  if (!raw) {
+    return null;
+  }
+  return ct.includes("application/json") ? JSON.parse(raw) : raw;
 }

@@ -29,8 +29,6 @@ services:
       dockerfile: infra/docker/worker-gpu.Dockerfile
     env_file:
       - ../.env
-    environment:
-      - HF_TOKEN=${HF_TOKEN}  # HuggingFace token for gated LLaMA 3.2-3B download
     volumes:
       - tribe-weights:/app/.cache/tribe
     deploy:

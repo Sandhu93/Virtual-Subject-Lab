@@ -69,7 +69,7 @@ flowchart LR
     F[Frontend<br/>React + Vite + Nginx]
     A[API<br/>FastAPI]
     W[Worker<br/>Python job processor]
-    T[TRIBE Adapter<br/>mock | real]
+    T[TRIBE Adapter<br/>mock or real]
     AT[Atlas Adapter<br/>ROI aggregation]
     DB[(Postgres)]
     S[(MinIO / Filesystem)]

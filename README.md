@@ -260,6 +260,12 @@ In practice, exports are useful because they preserve both the visual inspection
 
 ## License
 
-Application code in this repo: MIT.
+This repository is licensed under [CC BY-NC 4.0](LICENSE).
 
-Upstream TRIBE v2 model and weights: follow the upstream license and usage restrictions. For practical purposes, treat this as research-only unless your intended use is explicitly permitted by the upstream terms.
+That means this repository is intended for personal, research, and other non-commercial use only.
+
+Additional upstream licensing context:
+
+- TRIBE v2 upstream notices and attribution: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+- Upstream TRIBE v2 materials remain subject to their own license terms and attribution requirements
+- Nothing in this repository grants commercial rights to upstream TRIBE v2 code, models, or weights

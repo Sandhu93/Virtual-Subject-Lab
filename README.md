@@ -1,107 +1,170 @@
 # virtual-subject
 
-A research-grade TRIBE v2 web app for lab teaching and hypothesis testing.
+`virtual-subject` is a research-facing web application built around TRIBE v2. It turns raw model inference into something inspectable: a workflow where you can submit a stimulus, run prediction, scrub through time, inspect ROI evidence, compare runs, and export reproducible artifacts.
 
-Upload text, audio, or video. The app predicts cortical hemodynamic responses for an average virtual subject using the TRIBE v2 pretrained model. Inspect the 3-D brain map over time, explore ROI traces, compare modality ablations, contrast two stimuli, and export reproducible artifacts.
+The current local setup works best for text-first exploration. Audio and video support are part of the architecture, but heavier real-mode workloads are better suited to a stronger GPU environment.
 
-> **Scientific caveats (always visible in the UI)**
-> - Average unseen subject only — not personalized predictions.
-> - Predicted BOLD-like (fMRI) responses, not neuronal firing.
-> - 1 Hz output with ~5-second hemodynamic lag.
-> - Research use only. Upstream TRIBE v2 is CC BY-NC 4.0.
+Case study: [docs/portfolio-case-study.md](docs/portfolio-case-study.md)
 
----
+## Project Summary
 
-## How to use the app
+This project started as an attempt to make a difficult research model usable on a personal machine. The main value is not that it gives a final answer about the brain, but that it makes a complex research model easier to inspect.
 
-### Step 1 — Create a stimulus
+What the app does:
 
-Go to **1 · Stimuli** in the navigation.
+- accepts text, audio, or video stimuli
+- runs TRIBE-backed cortical response prediction in `mock` or `real` mode
+- renders predicted cortical activity on a 3D brain viewer over time
+- aligns each frame to the matching text segment, token, or media window
+- surfaces ROI evidence, top responding regions, and ROI traces
+- supports comparison, exports, and reproducible manifests
 
-You have two input paths:
+This is a research project, not a medical or diagnostic product.
 
-**Text** — paste any sentence or paragraph into the text box and click *Create text stimulus*. The app computes duration automatically from word count.
+## Why This Exists
 
-**Audio / Video** — give the upload a name, choose the source type (audio or video), pick a file, and click *Upload and finalize*. Supported formats: WAV, MP3, MP4, MOV.
+Research models are often impressive on paper but hard to operationalize. This repo focuses on the gap between:
 
-Once created, the stimulus appears in the library table at the bottom of the page with its detected modalities, duration, transcript (when available), and word-timing status.
+- a model that technically runs
+- a workflow that a human can actually inspect and reason about
 
----
+The app is designed to help answer questions like:
 
-### Step 2 — Queue a run
+- Which regions appear most responsive to a specific passage or phrase?
+- How does the predicted response evolve over time?
+- How do two inputs differ at the ROI level?
+- What artifacts should be saved for later analysis or reproducibility?
 
-Still on the **Stimuli** page, use the *Step 2 — Run* card on the right.
+## Main Features
 
-1. Select the stimulus you just created from the dropdown.
-2. Optionally edit the ablations field (comma-separated). The default runs all seven:
-   `full, text_only, audio_only, video_only, text_audio, text_video, audio_video`
-3. Click *Queue run*.
+- text, audio, and video stimulus ingestion
+- run queue with ablation support
+- 3D cortical viewer with scrub, rotate, zoom, and fullscreen
+- aligned input display per frame
+- in-canvas activation and suppression HUD in fullscreen mode
+- ROI evidence and top ROI summaries
+- ROI trace visualization
+- compare runs and inspect contrasts
+- export bundles with provenance metadata
+- Docker-first local setup
 
-The app navigates automatically to the run workspace.
+## Typical Use Cases
 
----
+This should be treated as exploratory research tooling, but it suggests practical directions in:
 
-### Step 3 — Inspect results in the run workspace
+- marketing and advertising
+  compare which wording patterns produce stronger predicted engagement-like responses
+- education
+  inspect how wording, density, and framing may affect attention or comprehension-related signals
+- research tooling
+  explore how emotionally loaded or cognitively dense text maps to predicted cortical activity
+- AI interpretability
+  create brain-inspired inspection workflows around multimodal inference outputs
 
-Go to **2 · Runs** and select your run from the dropdown, or follow the link from Step 2.
+## Architecture
 
-While the worker is processing, the page polls every 3 seconds and shows a *waiting* spinner. When the run succeeds, the workspace loads:
+```mermaid
+flowchart LR
+    U[Researcher / Browser]
+    F[Frontend<br/>React + Vite + Nginx]
+    A[API<br/>FastAPI]
+    W[Worker<br/>Python job processor]
+    T[TRIBE Adapter<br/>mock | real]
+    AT[Atlas Adapter<br/>ROI aggregation]
+    DB[(Postgres)]
+    S[(MinIO / Filesystem)]
+    HF[TRIBE Weights / Hugging Face]
 
-**Left sidebar — controls**
-- *Run / Ablation* — switch between runs and ablations (full, text_only, etc.).
-- *ROI quick-pick* — select which brain region's time trace to display.
-- *Activation threshold* — hide low-activation vertices in the 3-D viewer.
-- *Time scrubber* — step through timepoints (1 per second, up to ~100 s).
-- *Hemisphere / Parcel overlay* — toggle right-only view and parcel boundaries.
-- *Export bundle* — queue an export for this run.
+    U --> F
+    F --> A
+    A --> DB
+    A --> S
+    A --> W
+    W --> DB
+    W --> S
+    W --> T
+    W --> AT
+    T --> HF
+```
 
-**Centre — cortical viewer**
-- Drag to rotate, scroll to zoom.
-- Vertices are coloured by predicted BOLD-like activation (hot colormap).
-- Use *Play / Pause* to animate the full time series.
-- *Snapshot* saves a PNG of the current view.
-- The global signal sparkline below the viewer shows mean activation over time.
+## How Prediction Flows Through The System
 
-**Right sidebar — ROI summaries**
-- *Top responding ROIs* — the 10 highest-peak brain regions with peak value and latency.
-- *ROI trace* — a time-series chart for the quick-pick ROI you selected.
+At a practical level, the app works like this:
 
-The URL hash updates automatically (`#/runs?id=…&ablation=…&threshold=…`) so any view can be bookmarked or shared.
+1. A stimulus is created and stored as text content or uploaded media.
+2. The API writes metadata to Postgres and stores larger artifacts in MinIO or filesystem storage.
+3. A run request creates a queued background job.
+4. The worker claims that job and routes it through the configured TRIBE adapter.
+5. The adapter builds an events dataframe from the stimulus.
+6. The model returns a `(time, vertices)` prediction tensor.
+7. The atlas adapter aggregates those vertex values into ROI summaries and traces.
+8. The API serves both high-level summaries and raw viewer-friendly data back to the frontend.
 
----
+This separation matters because the frontend is not running model logic directly. It is consuming derived artifacts generated by the worker.
 
-### Step 4 — Compare two runs
+## Core Workflow
 
-Go to **3 · Compare**.
+1. Create a stimulus from text or upload media.
+2. Queue a run with one or more ablations.
+3. Inspect the cortical viewer, aligned input, ROI evidence, and traces.
+4. Compare runs or export the output bundle.
 
-You need at least two succeeded runs. Select *Run A* and *Run B*, choose an ablation condition, and click *Compare runs*. The app computes the vertex-level mean difference and shows a per-ROI contrast table (Δ values coloured green/red).
+## What A Run Actually Produces
 
----
+For each run, the system stores and exposes more than a single picture of the brain.
 
-### Step 5 — Export
+A run can include:
 
-Go to **4 · Export**, or use the *Export bundle* button in the run workspace sidebar.
+- a timed events dataframe derived from the stimulus
+- one or more ablation-specific prediction tensors
+- ROI-level frame summaries
+- ROI traces over time
+- top-responding ROI summaries
+- a viewer-ready vertex stream for the 3D canvas
+- export artifacts and provenance metadata
 
-Select a succeeded run and click *Queue export*. The worker packages:
+For text inputs, the system can align the predicted response to sentence-level or word-level segments so the user can inspect which part of the input is active at each frame.
 
-| File | Contents |
-|------|----------|
-| `manifest.json` | Provenance: model ID, commit SHA, input hash, atlas version, timestamps |
-| `{ablation}/prediction.npy` | Raw `(T, V)` float32 tensor for every ablation |
-| `{ablation}/roi_traces.json` | Per-ROI mean traces |
-| `{ablation}/preview.png` | Static cortical map at peak activation time |
+## Example Demo Setup
 
-When the export is ready, click *Download* to get the `.zip`.
+One of the most useful text demos is Dylan Thomas's poem:
 
----
+`Do not go gentle into that good night`
 
-### Home dashboard
+It works well because it is:
 
-The **Home** page shows your current pipeline state at a glance: which steps are done (green checkmark), live counts of stimuli/runs/exports, and a *Next step* call-to-action button that points you to exactly what to do next.
+- emotionally intense
+- linguistically rich
+- repetitive enough to inspect temporal change
+- short enough to test locally
 
----
+## Runtime Modes
 
-## Quickstart (Docker Compose — mock mode, no GPU required)
+### Mock Mode
+
+Mock mode is the default. It generates deterministic synthetic predictions so the full product workflow can be exercised without a heavy model download or GPU constraints.
+
+Use mock mode when you want to:
+
+- validate the end-to-end app flow
+- test UI behavior
+- demo the product structure quickly
+- work on a laptop without depending on TRIBE inference
+
+### Real Mode
+
+Real mode uses the upstream TRIBE v2 package and cached weights. This is where text-based local exploration becomes meaningful, but it is also where environment constraints matter most.
+
+Current reality:
+
+- text inference is the most practical path locally
+- audio and video workloads are significantly heavier
+- a 6 GB laptop GPU is usually not enough for a smooth full multimodal workflow
+- real-mode outputs often need lower thresholds than mock-mode outputs to surface useful ROI labels
+
+## Quickstart
+
+### Mock Mode
 
 ```bash
 git clone <this-repo> virtual-subject
@@ -110,268 +173,93 @@ cp .env.example .env
 docker compose -f infra/compose.yaml up --build
 ```
 
-Open `http://localhost:3000`. The API is at `http://localhost:8000`. MinIO console at `http://localhost:9001` (admin / minioadmin).
+Open:
 
-Mock mode is the default (`TRIBE_MODE=mock`). The worker generates deterministic synthetic predictions so the full pipeline — create stimulus, queue run, inspect brain map, compare, export — works without any GPU or model download.
+- frontend: `http://localhost:3000`
+- API: `http://localhost:8000`
+- MinIO console: `http://localhost:9001`
 
----
+### Real Mode
 
-## Real model inference (GPU required)
+Set the following in `.env`:
 
-Real inference requires the upstream `tribev2` package and a CUDA GPU.
+```env
+TRIBE_MODE=real
+TRIBE_MODEL_ID=facebook/tribev2
+TRIBE_DEVICE=cpu
+TRIBE_CACHE_DIR=/app/.cache/tribe
+HF_TOKEN=hf_...
+```
+
+Then run:
 
 ```bash
-# Install the upstream package (not published to PyPI; install from source)
-pip install -r requirements-real.txt
-
-# Point the app at the real adapter
-export TRIBE_MODE=real
-export TRIBE_MODEL_ID=facebook/tribev2
-export TRIBE_DEVICE=cuda          # or cpu (very slow)
-export TRIBE_CACHE_DIR=.cache/tribe
-
-docker compose -f infra/compose.yaml up --build
+docker compose -f infra/compose.yaml -f infra/compose.gpu.yaml up -d --build api worker
+docker compose -f infra/compose.yaml up -d --build frontend
 ```
 
-On first run the worker lazy-loads `TribeModel.from_pretrained("facebook/tribev2")` and caches it locally. Subsequent runs reuse the cached model. Inference time depends on GPU speed and stimulus duration; a ~60-second clip on a V100 takes a few minutes.
+Notes:
 
----
+- `TRIBE_DEVICE=cpu` is often the only realistic local choice on small GPUs
+- first real-mode startup can take a long time because weights and dependencies are cached
+- audio/video real-mode inference may still require a stronger remote environment
 
-## Real fsaverage5 mesh
+## Repo Structure
 
-The WebGL viewer ships with a level-5 icosphere placeholder mesh. To replace it with the real fsaverage5 cortical surface:
-
-```bash
-pip install nilearn nibabel
-python scripts/load_atlases.py
-```
-
-This downloads the fsaverage5 surface from nilearn, converts it to the binary mesh format expected by the viewer, and writes the files to `packages/atlas-assets/fsaverage5/`. The viewer picks them up automatically on next page load.
-
----
-
-## Architecture
-
-```
-Browser
-  └─► Frontend (React + Vite, served by Nginx :3000)
-         └─► API (FastAPI :8000)
-                ├─► Postgres   — metadata, jobs, audit_logs
-                └─► MinIO      — uploads, tensors, ROI traces, exports
-
-Worker (Python, polls jobs table)
-  └─► TribeAdapter (mock | real)
-  └─► AtlasAdapter  (ROI aggregation)
-  └─► StorageAdapter (MinIO | filesystem)
-```
-
-```
+```text
 virtual-subject/
   apps/
-    api/tests/          # API + smoke tests
-    frontend/           # React + Vite source
-    worker/tests/       # Worker + atlas + storage tests
-  alembic/              # Database migrations
+    frontend/                 React app
   infra/
-    compose.yaml        # All services
-    docker/             # Dockerfiles (api, worker, frontend)
+    compose.yaml             base local stack
+    compose.gpu.yaml         real-mode / GPU override
+    docker/                  Dockerfiles
   packages/
-    atlas-assets/       # fsaverage5 mesh + ROI index
-    test-fixtures/
+    atlas-assets/            mesh + ROI metadata
   scripts/
-    bootstrap.sh        # One-shot dev env setup
-    load_atlases.py     # Download / generate real fsaverage5
-    backfill_checksums.py
-    smoke_test.py       # End-to-end test against live API
+    load_atlases.py          atlas loading utility
+    smoke_test.py            API smoke test
   src/virtual_subject/
-    adapters/           # tribe.py, atlas.py, storage.py
-    api/                # routers, schemas
-    db/                 # ORM models, migrations bootstrap
-    domain/             # constants, utilities
-    services/           # app_service.py — all business logic
-    worker/             # worker.py — job loop
-  .env.example
-  Makefile
-  pyproject.toml
+    adapters/                TRIBE, atlas, storage adapters
+    api/                     FastAPI routers and schemas
+    db/                      models and DB setup
+    domain/                  constants and utilities
+    services/                business logic
+    web/                     static/template assets
+    worker/                  job polling and execution
+  tests/                     Python tests
 ```
 
----
+## Exports
 
-## Docker Compose services
+Each export bundle can include:
 
-| Service | Image | Port | Role |
-|---------|-------|------|------|
-| `postgres` | postgres:17-alpine | 5432 | Metadata + job queue |
-| `minio` | minio/minio | 9000 / 9001 | Object storage |
-| `minio-init` | minio/mc | — | Bucket initialization |
-| `api` | custom (python:3.11) | 8000 | FastAPI REST API |
-| `worker` | custom (python:3.11) | — | Background job processor |
-| `frontend` | custom (node:22 → nginx:1.27) | 3000 | Static frontend |
+- prediction tensors
+- ROI traces
+- preview image(s)
+- manifest metadata for provenance and reproducibility
 
----
+In practice, exports are useful because they preserve both the visual inspection path and the machine-readable output path.
 
-## MinIO bucket layout
+## Next Steps
 
-```
-virtual-subject/
-  projects/{project_id}/
-    stimuli/{stimulus_id}/
-      source.{ext}              original upload
-      events.json               TRIBE events dataframe
-    runs/{run_id}/
-      {ablation}/
-        prediction.npy          (T × V) float32 tensor
-        roi_traces.json         {roi_id → [T values]}
-        preview.png             static cortical map
-    exports/{export_id}/
-      manifest.json             provenance record
-      bundle.zip                full export package
-    contrasts/{contrast_id}/
-      contrast.npy              (V,) vertex-level difference
-```
+- stabilize real-mode audio and video inference in a stronger remote environment such as Runpod
+- improve threshold calibration so real-mode activations are easier to interpret out of the box
+- add experiment-level batch runs instead of single-run workflows only
+- improve model/runtime observability for long-running jobs
+- add richer narrative summaries of what changed across frames and ROIs
+- separate research-oriented UI from demo/showcase UI
 
----
+## Current Caveats
 
-## Environment variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgresql+psycopg://…` | Postgres DSN |
-| `STORAGE_BACKEND` | `minio` | `minio` or `filesystem` |
-| `MINIO_ENDPOINT` | `minio:9000` | MinIO host:port |
-| `MINIO_ACCESS_KEY` | `minioadmin` | MinIO auth |
-| `MINIO_SECRET_KEY` | `minioadmin` | MinIO auth |
-| `MINIO_BUCKET` | `virtual-subject` | Bucket name |
-| `TRIBE_MODE` | `mock` | `mock` or `real` |
-| `TRIBE_MODEL_ID` | `facebook/tribev2` | Upstream model ID |
-| `TRIBE_CACHE_DIR` | `.cache/tribe` | Local model weight cache |
-| `TRIBE_DEVICE` | `auto` | `cuda` / `cpu` / `auto` |
-| `FRONTEND_ORIGINS` | `http://localhost:3000,…` | CORS allowlist |
-| `WORKER_POLL_SECONDS` | `2` | Job claim interval |
-| `APP_GIT_COMMIT` | `unknown` | Injected at build for provenance |
-
-Full list with defaults in `.env.example`.
-
----
-
-## API surface
-
-Base path: `/api/v1`
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | API status |
-| GET | `/health/db` | Postgres connectivity |
-| GET | `/health/storage` | MinIO connectivity |
-| GET | `/health/worker` | Worker heartbeat + mode |
-| GET | `/stimuli` | List stimuli |
-| POST | `/stimuli` | Create file upload session |
-| PUT | `/stimuli/{id}/content` | Upload file |
-| POST | `/stimuli/{id}/finalize` | Finalize upload |
-| POST | `/stimuli/text` | Create text stimulus |
-| GET | `/stimuli/{id}` | Stimulus detail |
-| GET | `/runs` | List runs |
-| POST | `/runs` | Create run (queues job) |
-| GET | `/runs/{id}` | Run detail + ablations |
-| GET | `/runs/{id}/artifacts` | Artifact registry |
-| GET | `/runs/{id}/timeline` | Global signal curve |
-| GET | `/runs/{id}/frames/{t}` | Frame at time index |
-| GET | `/runs/{id}/frames/{t}/vertices` | Binary float32 vertex stream |
-| POST | `/analysis/roi-traces` | ROI time series |
-| GET | `/analysis/top-rois` | Top-N ROIs by peak |
-| POST | `/analysis/contrast` | Compute vertex-level contrast |
-| GET | `/analysis/contrast/{id}` | Contrast metadata |
-| GET | `/analysis/contrast/{id}/download` | Binary `.npy` download |
-| GET | `/atlases` | List atlases |
-| GET | `/atlases/{id}/rois` | ROI metadata |
-| GET | `/atlases/fsaverage5/metadata` | Mesh metadata |
-| GET | `/atlases/fsaverage5/mesh/{hemi}/{file}` | Binary mesh file |
-| GET | `/exports` | List exports |
-| POST | `/exports` | Queue export job |
-| GET | `/exports/{id}` | Export status |
-| GET | `/exports/{id}/download` | Download `.zip` bundle |
-
----
-
-## Developer commands (Makefile)
-
-```bash
-make up        # docker compose up --build
-make test      # pytest (mock mode, no GPU)
-make lint      # ruff check + format
-make migrate   # alembic upgrade head
-make smoke     # scripts/smoke_test.py against live API
-```
-
-Local dev without Docker:
-
-```bash
-python -m venv .venv
-.venv/Scripts/python -m pip install -e .[dev]
-.venv/Scripts/python -m pytest
-```
-
----
-
-## Frontend
-
-The frontend is a React + Vite single-page app served by Nginx, using Oat (vendored at `0.5.0`) for all UI styling. Four runtime dependencies only: `react`, `react-dom`, `vite`, `@vitejs/plugin-react`. No state management library, no router library — hash routing is a 20-line custom hook.
-
-Pages:
-- **Home** — live pipeline dashboard with step-by-step status and contextual CTA
-- **1 · Stimuli** — text paste, file upload, run queue
-- **2 · Runs** — 3-D cortical viewer, ablation switcher, ROI traces
-- **3 · Compare** — two-run contrast table
-- **4 · Export** — export queue and download history
-
----
-
-## TRIBE integration
-
-`src/virtual_subject/adapters/tribe.py` contains two adapters behind a common interface:
-
-**`MockTribeAdapter`** — deterministic seeded sine/cosine vertex predictions. Used by default. Lets the entire pipeline run in CI or on a laptop without GPU or weights.
-
-**`RealTribeAdapter`** — wraps the upstream TRIBE v2 inference API:
-```python
-TribeModel.from_pretrained("facebook/tribev2", cache_folder=...)
-model.get_events_dataframe(video_path=... | audio_path=... | text_path=...)
-model.predict(events=df)
-```
-
-Only the adapter ever imports from `tribev2`. The rest of the codebase is isolated from upstream internals.
-
----
-
-## Reproducibility
-
-Every export `manifest.json` captures:
-
-- `model_id` — `facebook/tribev2`
-- `app_git_commit` — injected at Docker build time
-- `tribe_upstream_version` — from config
-- `weights_source` — `huggingface:facebook/tribev2`
-- `atlas_id`, `normalization`, `subject_mode`
-- `input_hash` — sha256 of the stimulus content
-- `created_at` timestamp
-- Full run config and ablation list
-
----
-
-## Minimal dependency philosophy
-
-| Decision | Rationale |
-|----------|-----------|
-| No Redis | Job queue uses a Postgres `jobs` table with `claimed_at` locking; one worker is enough for MVP |
-| No React Router / Zustand | Custom 20-line hash hook + React built-in state; URL params carry viewer state |
-| No charting library | SVG sparklines hand-rolled in `LineChart.jsx` |
-| No cloud SDK | MinIO provides an S3-compatible API; `minio` client is the only object-storage dependency |
-| No TypeScript | Plain JSX keeps the frontend zero-config |
-| No HCP Glasser atlas in-repo | Requires a ConnectomeDB registration; `load_atlases.py` handles the download |
-
----
+- not a clinical or diagnostic system
+- predictions are average-subject, model-derived signals
+- outputs are easier to inspect than to validate causally
+- local hardware constraints still limit the multimodal real-mode path
+- some parts of the real multimodal path still belong on a stronger remote GPU environment rather than a laptop
 
 ## License
 
-Application code: MIT (this repo).
-Upstream TRIBE v2 model and weights: **CC BY-NC 4.0** — non-commercial research use only.
+Application code in this repo: MIT.
+
+Upstream TRIBE v2 model and weights: follow the upstream license and usage restrictions. For practical purposes, treat this as research-only unless your intended use is explicitly permitted by the upstream terms.
